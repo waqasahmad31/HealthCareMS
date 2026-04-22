@@ -1,0 +1,131 @@
+@page "/admin/system-configuration"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>System Configuration</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Admin</p>
+        <h1>System Configuration</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+</section>
+
+@if (Configuration is not null)
+{
+    @foreach (var group in Configuration.Settings.GroupBy(x => x.GroupName))
+    {
+        <section class="panel system-config-panel">
+            <div class="panel-header">
+                <h2>@group.Key</h2>
+                <span class="status-pill blue">@group.Count()</span>
+            </div>
+            <div class="table-shell">
+                @foreach (var setting in group)
+                {
+                    <div class="table-row system-setting-row">
+                        <div>
+                            <strong>@setting.DisplayName</strong>
+                            <span>@setting.SettingKey</span>
+                        </div>
+                        <div>
+                            @if (setting.ValueType == "Boolean")
+                            {
+                                <select value="@GetValue(setting.SettingKey)" @onchange="args => SetValue(setting.SettingKey, args.Value?.ToString() ?? string.Empty)" disabled="@(!setting.IsEditable)">
+                                    <option value="true">true</option>
+                                    <option value="false">false</option>
+                                </select>
+                            }
+                            else
+                            {
+                                <input value="@GetValue(setting.SettingKey)" @onchange="args => SetValue(setting.SettingKey, args.Value?.ToString() ?? string.Empty)" disabled="@(!setting.IsEditable)" />
+                            }
+                        </div>
+                        <span>@setting.ValueType</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => SaveAsync(setting)" disabled="@(IsBusy || !setting.IsEditable)">Save</button>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private SystemConfigurationModel? Configuration { get; set; }
+
+    private Dictionary<string, string> SettingValues { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<SystemConfigurationModel>("api/v1/admin/system-configuration");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Configuration = result.Data;
+            SettingValues.Clear();
+            foreach (var setting in Configuration.Settings)
+            {
+                SettingValues[setting.SettingKey] = setting.Value;
+            }
+
+            SetStatus("System configuration loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "System configuration unavailable.", "tone-amber");
+    }
+
+    private async Task SaveAsync(SystemSettingModel setting)
+    {
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdateSystemSettingModel, SystemSettingModel>(
+            $"api/v1/admin/system-configuration/{Uri.EscapeDataString(setting.SettingKey)}",
+            new UpdateSystemSettingModel { Value = GetValue(setting.SettingKey) });
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            await LoadAsync();
+            SetStatus("System setting saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "System setting update failed.", "tone-amber");
+    }
+
+    private string GetValue(string settingKey)
+    {
+        return SettingValues.TryGetValue(settingKey, out var value) ? value : string.Empty;
+    }
+
+    private void SetValue(string settingKey, string value)
+    {
+        SettingValues[settingKey] = value;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

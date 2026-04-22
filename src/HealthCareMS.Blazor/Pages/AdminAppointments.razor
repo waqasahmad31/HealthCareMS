@@ -1,0 +1,183 @@
+@page "/admin/appointments"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Admin Appointments</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Admin</p>
+        <h1>Appointments Overview</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+</section>
+
+<section class="panel">
+    <div class="entity-form admin-filter">
+        <label>
+            Date
+            <input type="date" value="@DateText" @onchange="OnDateChanged" />
+        </label>
+        <label>
+            Status
+            <select @bind="StatusFilter">
+                <option value="">All</option>
+                <option value="Pending">Pending</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="InProgress">InProgress</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+                <option value="NoShow">NoShow</option>
+            </select>
+        </label>
+        <label>
+            DoctorId
+            <InputText @bind-Value="DoctorIdText" />
+        </label>
+        <label>
+            PatientId
+            <InputText @bind-Value="PatientIdText" />
+        </label>
+        <label>
+            PageSize
+            <InputNumber @bind-Value="PageSize" />
+        </label>
+    </div>
+</section>
+
+@if (Overview is not null)
+{
+    <section class="stats-grid admin-stats">
+        <article class="metric-card">
+            <span class="metric-label">Total</span>
+            <strong>@Overview.TotalCount</strong>
+            <span class="tone-blue">appointments</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Pending</span>
+            <strong>@Overview.PendingCount</strong>
+            <span class="tone-amber">to review</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Completed</span>
+            <strong>@Overview.CompletedCount</strong>
+            <span class="tone-green">done</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Fees</span>
+            <strong>@Overview.CompletedFeeTotal.ToString("0")</strong>
+            <span class="tone-muted">completed</span>
+        </article>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Appointments</h2>
+            <span class="status-pill blue">@Overview.Appointments.Count</span>
+        </div>
+        <div class="table-shell">
+            @foreach (var appointment in Overview.Appointments)
+            {
+                <div class="table-row admin-appointment-row">
+                    <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                    <span>@appointment.PatientName</span>
+                    <span>@appointment.DoctorName</span>
+                    <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                    <span>@appointment.Type</span>
+                    <span>@appointment.ConsultationFee.ToString("0")</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private AdminAppointmentOverviewModel? Overview { get; set; }
+
+    private string DateText { get; set; } = string.Empty;
+
+    private string StatusFilter { get; set; } = string.Empty;
+
+    private string DoctorIdText { get; set; } = string.Empty;
+
+    private string PatientIdText { get; set; } = string.Empty;
+
+    private int PageSize { get; set; } = 50;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task LoadAsync()
+    {
+        var query = new List<string>
+        {
+            "pageNumber=1",
+            $"pageSize={PageSize}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(DateText))
+        {
+            query.Add($"date={DateText}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(StatusFilter))
+        {
+            query.Add($"status={Uri.EscapeDataString(StatusFilter)}");
+        }
+
+        if (Guid.TryParse(DoctorIdText, out var doctorId))
+        {
+            query.Add($"doctorId={doctorId}");
+        }
+
+        if (Guid.TryParse(PatientIdText, out var patientId))
+        {
+            query.Add($"patientId={patientId}");
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<AdminAppointmentOverviewModel>(
+            $"api/v1/admin/appointments/overview?{string.Join("&", query)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Overview = result.Data;
+            SetStatus("Appointment overview loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Appointment overview unavailable.", "tone-amber");
+    }
+
+    private void OnDateChanged(ChangeEventArgs args)
+    {
+        DateText = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private static string StatusPill(string status)
+    {
+        return status switch
+        {
+            "Completed" => "status-pill green",
+            "Cancelled" or "NoShow" => "status-pill amber",
+            "InProgress" => "status-pill blue",
+            _ => "status-pill blue"
+        };
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

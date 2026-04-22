@@ -1,6 +1,7 @@
 using HealthCareMS.Application.Abstractions.Authentication;
 using HealthCareMS.Application.Abstractions.Persistence;
 using HealthCareMS.Application.Appointments;
+using HealthCareMS.Application.Admin;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Application.Doctors;
 using HealthCareMS.Application.Identity;
@@ -11,6 +12,7 @@ using HealthCareMS.Application.Queues;
 using HealthCareMS.Application.Tenants;
 using HealthCareMS.Infrastructure.Authentication;
 using HealthCareMS.Infrastructure.Appointments;
+using HealthCareMS.Infrastructure.Admin;
 using HealthCareMS.Infrastructure.Consultations;
 using HealthCareMS.Infrastructure.Doctors;
 using HealthCareMS.Infrastructure.Identity;
@@ -53,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<IDoctorService, DoctorService>();
         services.AddScoped<IIdentityManagementService, IdentityManagementService>();
         services.AddScoped<IAppointmentService, AppointmentService>();
+        services.AddScoped<IAdminOperationsService, AdminOperationsService>();
         services.AddScoped<IConsultationService, ConsultationService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IPortalService, PortalService>();

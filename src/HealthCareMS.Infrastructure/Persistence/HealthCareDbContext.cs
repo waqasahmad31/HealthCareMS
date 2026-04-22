@@ -33,6 +33,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
 
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+
     public DbSet<Patient> Patients => Set<Patient>();
 
     public DbSet<MedicalHistory> MedicalHistories => Set<MedicalHistory>();

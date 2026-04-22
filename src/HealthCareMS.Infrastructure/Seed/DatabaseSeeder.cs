@@ -19,6 +19,7 @@ public sealed class DatabaseSeeder(
         await SeedPermissionsAsync(cancellationToken);
         await SeedRolesAsync(cancellationToken);
         await SeedSuperAdminAsync(cancellationToken);
+        await SeedSystemSettingsAsync(cancellationToken);
     }
 
     private async Task SeedPermissionsAsync(CancellationToken cancellationToken)
@@ -108,6 +109,34 @@ public sealed class DatabaseSeeder(
         logger.LogInformation("Seeded Super Admin account {Email}.", email);
     }
 
+    private async Task SeedSystemSettingsAsync(CancellationToken cancellationToken)
+    {
+        var defaults = new[]
+        {
+            Setting("Platform.TimeZone", "Platform", "Time zone", "Asia/Karachi", "String", "Default platform time zone."),
+            Setting("Platform.DefaultCurrency", "Platform", "Default currency", "PKR", "String", "Currency used for invoices and reports."),
+            Setting("Platform.SupportEmail", "Platform", "Support email", "support@healthcarems.local", "String", "Public support email address."),
+            Setting("Security.MaintenanceMode", "Security", "Maintenance mode", "false", "Boolean", "Temporarily limit platform access."),
+            Setting("Notifications.EmailEnabled", "Notifications", "Email enabled", "true", "Boolean", "Allow outgoing email notifications."),
+            Setting("Notifications.SmsEnabled", "Notifications", "SMS enabled", "false", "Boolean", "Allow outgoing SMS notifications."),
+            Setting("Appointments.Reminder24HrEnabled", "Appointments", "24hr reminders", "true", "Boolean", "Schedule appointment reminders 24 hours before visit."),
+            Setting("Appointments.Reminder2HrEnabled", "Appointments", "2hr reminders", "true", "Boolean", "Schedule appointment reminders 2 hours before visit."),
+            Setting("Performance.SlowQueryThresholdMs", "Performance", "Slow query threshold", "500", "Number", "Threshold used by admins during performance reviews.")
+        };
+
+        var existingKeys = await dbContext.SystemSettings
+            .Select(x => x.SettingKey)
+            .ToListAsync(cancellationToken);
+        var existing = existingKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var setting in defaults.Where(x => !existing.Contains(x.SettingKey)))
+        {
+            dbContext.SystemSettings.Add(setting);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private static string ToModule(string permissionKey)
     {
         var first = permissionKey.Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "System";
@@ -118,6 +147,26 @@ public sealed class DatabaseSeeder(
     {
         var last = permissionKey.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "*";
         return last.Length == 0 ? "*" : char.ToUpperInvariant(last[0]) + last[1..];
+    }
+
+    private static SystemSetting Setting(
+        string settingKey,
+        string groupName,
+        string displayName,
+        string value,
+        string valueType,
+        string description)
+    {
+        return new SystemSetting
+        {
+            SettingKey = settingKey,
+            GroupName = groupName,
+            DisplayName = displayName,
+            Value = value,
+            ValueType = valueType,
+            Description = description,
+            IsEditable = true
+        };
     }
 }
 

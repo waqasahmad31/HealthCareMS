@@ -1,0 +1,175 @@
+@page "/admin/doctors"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Admin Doctors</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Admin</p>
+        <h1>Doctor Management</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+</section>
+
+<section class="panel">
+    <div class="entity-form admin-filter">
+        <label>
+            Specialization
+            <InputText @bind-Value="SpecializationFilter" />
+        </label>
+        <label>
+            City
+            <InputText @bind-Value="CityFilter" />
+        </label>
+        <label>
+            Verified
+            <select @bind="VerifiedFilter">
+                <option value="">All</option>
+                <option value="true">Verified</option>
+                <option value="false">Pending</option>
+            </select>
+        </label>
+        <label>
+            Active
+            <select @bind="ActiveFilter">
+                <option value="">All</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+            </select>
+        </label>
+    </div>
+</section>
+
+@if (Management is not null)
+{
+    <section class="stats-grid admin-stats">
+        <article class="metric-card">
+            <span class="metric-label">Total</span>
+            <strong>@Management.TotalCount</strong>
+            <span class="tone-blue">doctors</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Verified</span>
+            <strong>@Management.VerifiedCount</strong>
+            <span class="tone-green">approved</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Pending</span>
+            <strong>@Management.PendingVerificationCount</strong>
+            <span class="tone-amber">verification</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Inactive</span>
+            <strong>@Management.InactiveCount</strong>
+            <span class="tone-muted">disabled</span>
+        </article>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Doctors</h2>
+            <span class="status-pill blue">@Management.Doctors.Count</span>
+        </div>
+        <div class="table-shell">
+            @foreach (var doctor in Management.Doctors)
+            {
+                <div class="table-row admin-doctor-row">
+                    <span>@doctor.FullName</span>
+                    <span>@doctor.Specialization</span>
+                    <span>@doctor.City</span>
+                    <span class="status-pill @(doctor.IsVerified ? "green" : "amber")">@(doctor.IsVerified ? "Verified" : "Pending")</span>
+                    <span class="status-pill @(doctor.IsActive ? "blue" : "amber")">@(doctor.IsActive ? "Active" : "Inactive")</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SetStatusAsync(doctor, !doctor.IsVerified, doctor.IsActive)" disabled="@IsBusy">
+                        @(doctor.IsVerified ? "Unverify" : "Verify")
+                    </button>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SetStatusAsync(doctor, doctor.IsVerified, !doctor.IsActive)" disabled="@IsBusy">
+                        @(doctor.IsActive ? "Disable" : "Enable")
+                    </button>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private AdminDoctorManagementModel? Management { get; set; }
+
+    private string SpecializationFilter { get; set; } = string.Empty;
+
+    private string CityFilter { get; set; } = string.Empty;
+
+    private string VerifiedFilter { get; set; } = string.Empty;
+
+    private string ActiveFilter { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task LoadAsync()
+    {
+        var query = new List<string>();
+        AddQuery(query, "specialization", SpecializationFilter);
+        AddQuery(query, "city", CityFilter);
+        AddQuery(query, "isVerified", VerifiedFilter);
+        AddQuery(query, "isActive", ActiveFilter);
+
+        var url = query.Count == 0
+            ? "api/v1/admin/doctors/management"
+            : $"api/v1/admin/doctors/management?{string.Join("&", query)}";
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<AdminDoctorManagementModel>(url);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Management = result.Data;
+            SetStatus("Doctor management loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor management unavailable.", "tone-amber");
+    }
+
+    private async Task SetStatusAsync(AdminDoctorRowModel doctor, bool isVerified, bool isActive)
+    {
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdateDoctorAdminStatusModel, AdminDoctorRowModel>(
+            $"api/v1/admin/doctors/{doctor.Id}/status",
+            new UpdateDoctorAdminStatusModel { IsVerified = isVerified, IsActive = isActive });
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            await LoadAsync();
+            SetStatus("Doctor status updated.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor status update failed.", "tone-amber");
+    }
+
+    private static void AddQuery(List<string> query, string key, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            query.Add($"{key}={Uri.EscapeDataString(value)}");
+        }
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

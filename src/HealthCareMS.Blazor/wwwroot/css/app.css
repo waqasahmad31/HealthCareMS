@@ -557,6 +557,51 @@ a, .btn-link {
     grid-template-columns: minmax(7rem, 0.45fr) minmax(9rem, 0.65fr) minmax(5rem, 0.35fr) minmax(7rem, 0.45fr);
 }
 
+.admin-filter {
+    align-items: end;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.admin-stats .metric-card {
+    min-height: 7.2rem;
+}
+
+.admin-appointment-row {
+    grid-template-columns: minmax(8rem, 0.45fr) minmax(0, 0.8fr) minmax(0, 0.8fr) auto auto minmax(5rem, 0.28fr);
+}
+
+.admin-doctor-row {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 0.65fr) minmax(7rem, 0.4fr) auto auto auto auto;
+}
+
+.system-config-panel {
+    margin-bottom: 1rem;
+}
+
+.system-setting-row {
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, 0.8fr) minmax(5rem, 0.25fr) auto;
+}
+
+.system-setting-row div:first-child {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.system-setting-row span,
+.system-setting-row div:first-child span {
+    color: #64748b;
+    font-size: 0.85rem;
+}
+
+.system-setting-row input,
+.system-setting-row select {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    min-height: 2.4rem;
+    padding: 0 0.65rem;
+    width: 100%;
+}
+
 .table-head {
     background: #f8fafc;
     color: #475569;
@@ -668,9 +713,13 @@ code {
     .notification-filter,
     .notification-item,
     .preferences-grid,
+    .admin-filter,
+    .admin-appointment-row,
+    .admin-doctor-row,
     .portal-filter,
     .portal-grid,
     .queue-filter,
+    .system-setting-row,
     .queue-summary {
         grid-template-columns: 1fr;
     }

@@ -154,3 +154,24 @@ public sealed class UserPermissionConfiguration : IEntityTypeConfiguration<UserP
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public sealed class SystemSettingConfiguration : IEntityTypeConfiguration<SystemSetting>
+{
+    public void Configure(EntityTypeBuilder<SystemSetting> builder)
+    {
+        builder.ToTable("SystemSettings", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.SettingKey).HasMaxLength(120).IsRequired();
+        builder.Property(x => x.GroupName).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+        builder.Property(x => x.Value).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.ValueType).HasMaxLength(40).HasDefaultValue("String").IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(500);
+        builder.Property(x => x.IsEditable).HasDefaultValue(true);
+
+        builder.HasIndex(x => x.SettingKey).IsUnique();
+        builder.HasIndex(x => new { x.GroupName, x.DisplayName });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+    }
+}

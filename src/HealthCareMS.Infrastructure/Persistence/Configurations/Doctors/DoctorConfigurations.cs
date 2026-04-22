@@ -20,6 +20,8 @@ public sealed class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
         builder.HasIndex(x => x.UserId).IsUnique();
         builder.HasIndex(x => x.PmdcRegistrationNumber).IsUnique();
         builder.HasIndex(x => new { x.Specialization, x.City });
+        builder.HasIndex(x => new { x.IsVerified, x.IsActive });
+        builder.HasIndex(x => new { x.City, x.IsActive });
         builder.HasQueryFilter(x => !x.IsDeleted);
 
         builder
