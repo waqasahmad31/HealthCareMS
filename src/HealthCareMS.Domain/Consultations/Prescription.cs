@@ -38,6 +38,10 @@ public sealed class Prescription : BaseEntity
 
     public PrescriptionStatus Status { get; set; } = PrescriptionStatus.Issued;
 
+    public string VerificationCode { get; set; } = string.Empty;
+
+    public string DigitalSignature { get; set; } = string.Empty;
+
     public Appointment Appointment { get; set; } = null!;
 
     public Patient Patient { get; set; } = null!;
@@ -46,4 +50,3 @@ public sealed class Prescription : BaseEntity
 
     public ICollection<PrescriptionItem> Items { get; set; } = new List<PrescriptionItem>();
 }
-

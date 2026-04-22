@@ -614,6 +614,65 @@ a, .btn-link {
     gap: 1rem;
 }
 
+.medicine-search {
+    align-items: end;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.medicine-search label {
+    color: #334155;
+    display: grid;
+    font-size: 0.88rem;
+    font-weight: 700;
+    gap: 0.35rem;
+}
+
+.medicine-search input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    min-height: 2.55rem;
+    padding: 0 0.75rem;
+    width: 100%;
+}
+
+.drug-results {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.drug-option {
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: 6px;
+    color: #102336;
+    display: grid;
+    gap: 0.18rem;
+    min-height: 5.2rem;
+    padding: 0.65rem;
+    text-align: left;
+}
+
+.drug-option:hover {
+    border-color: #0ea5e9;
+}
+
+.drug-option.banned {
+    background: #fff7ed;
+    border-color: #fed7aa;
+}
+
+.drug-option span {
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.drug-option code {
+    overflow-wrap: anywhere;
+}
+
 .medicine-form {
     display: grid;
     gap: 0.75rem;
@@ -654,6 +713,24 @@ a, .btn-link {
 
 .prescription-row {
     grid-template-columns: minmax(0, 1fr) minmax(10rem, 0.7fr) minmax(5rem, 0.3fr) auto;
+}
+
+.warning-list {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.warning-item {
+    background: #fffbeb;
+    border: 1px solid #fbbf24;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.75rem;
+}
+
+.warning-item span {
+    color: #92400e;
 }
 
 .small-button {
@@ -931,6 +1008,8 @@ code {
     .consultation-room-grid,
     .video-console,
     .session-summary,
+    .medicine-search,
+    .drug-results,
     .medicine-form,
     .notification-filter,
     .notification-item,

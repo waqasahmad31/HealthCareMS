@@ -16,6 +16,24 @@ public sealed record CompleteConsultationResponse(
     DateOnly? FollowUpDate,
     PrescriptionResponse? Prescription);
 
+public sealed record DrapMedicineResponse(
+    Guid Id,
+    string DrapRegistrationNumber,
+    string BrandName,
+    string GenericName,
+    string? Strength,
+    string DosageForm,
+    string? Manufacturer,
+    string AllergenKeywords,
+    bool IsBanned);
+
+public sealed record DrugAllergyWarningResponse(
+    string MedicineName,
+    string? GenericName,
+    string MatchedAllergy,
+    string Severity,
+    string Message);
+
 public sealed record PrescriptionResponse(
     Guid Id,
     string PrescriptionNumber,
@@ -27,7 +45,26 @@ public sealed record PrescriptionResponse(
     DateTimeOffset IssuedAt,
     DateTimeOffset ValidUntil,
     string Status,
+    string VerificationCode,
+    string DigitalSignature,
     IReadOnlyList<PrescriptionItemResponse> Items);
+
+public sealed record PrescriptionVerificationResponse(
+    Guid Id,
+    string PrescriptionNumber,
+    string Status,
+    DateTimeOffset IssuedAt,
+    DateTimeOffset ValidUntil,
+    string PatientName,
+    string DoctorName,
+    string? DoctorPmdcRegistrationNumber,
+    string DigitalSignature,
+    bool IsValid);
+
+public sealed record PrescriptionPdfResponse(
+    byte[] Content,
+    string FileName,
+    string ContentType);
 
 public sealed record PrescriptionItemResponse(
     Guid Id,
@@ -42,4 +79,3 @@ public sealed record PrescriptionItemResponse(
     decimal Quantity,
     string? Instructions,
     bool IsSubstitutionAllowed);
-

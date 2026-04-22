@@ -49,6 +49,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<PrescriptionItem> PrescriptionItems => Set<PrescriptionItem>();
 
+    public DbSet<DrapMedicine> DrapMedicines => Set<DrapMedicine>();
+
     public DbSet<ConsultationSession> ConsultationSessions => Set<ConsultationSession>();
 
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();

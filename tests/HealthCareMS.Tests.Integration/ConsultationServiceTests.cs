@@ -6,6 +6,8 @@ using HealthCareMS.Domain.Patients;
 using HealthCareMS.Infrastructure.Consultations;
 using HealthCareMS.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using System.Text;
 
 namespace HealthCareMS.Tests.Integration;
 
@@ -41,6 +43,8 @@ public sealed class ConsultationServiceTests
         Assert.True(prescription.IsSuccess);
         Assert.Equal(appointment.Id, prescription.Value.AppointmentId);
         Assert.Equal("Paracetamol", prescription.Value.Items[0].MedicineName);
+        Assert.NotEmpty(result.Value.Prescription?.VerificationCode ?? string.Empty);
+        Assert.NotEmpty(result.Value.Prescription?.DigitalSignature ?? string.Empty);
     }
 
     [Fact]
@@ -75,6 +79,75 @@ public sealed class ConsultationServiceTests
         Assert.Contains(results, x => x.Code == "I10");
     }
 
+    [Fact]
+    public async Task SearchDrapMedicinesAsync_ShouldReturnDefaultDrapCatalogMatches()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new ConsultationService(dbContext);
+
+        var results = await service.SearchDrapMedicinesAsync("amox", CancellationToken.None);
+
+        Assert.Contains(results, x => x.BrandName == "Amoxil" && x.GenericName == "Amoxicillin");
+        Assert.All(results, x => Assert.False(string.IsNullOrWhiteSpace(x.DrapRegistrationNumber)));
+    }
+
+    [Fact]
+    public async Task CheckDrugAllergiesAsync_ShouldWarnWhenMedicineMatchesPatientAllergy()
+    {
+        await using var dbContext = CreateDbContext();
+        var appointment = await SeedAppointmentAsync(dbContext, "[\"Penicillin\"]");
+        var service = new ConsultationService(dbContext);
+
+        var result = await service.CheckDrugAllergiesAsync(
+            appointment.PatientId,
+            new DrugAllergyCheckRequest([
+                new PrescriptionItemRequest("Amoxil", "Amoxicillin", "500mg", "Oral", "1 capsule", "BID", 5, 10, null, true)
+            ]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var warning = Assert.Single(result.Value);
+        Assert.Equal("Penicillin", warning.MatchedAllergy);
+        Assert.Equal("High", warning.Severity);
+        Assert.Contains("Amoxil", warning.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GeneratePrescriptionPdfAsync_ShouldCreatePdfWithVerificationSignatureAndQr()
+    {
+        await using var dbContext = CreateDbContext();
+        var appointment = await SeedAppointmentAsync(dbContext);
+        var service = CreateDocumentEnabledService(dbContext);
+
+        var result = await service.CompleteAsync(
+            appointment.Id,
+            new CompleteConsultationRequest(
+                "Acute pharyngitis",
+                "J02.9",
+                "Hydration advised.",
+                null,
+                [new PrescriptionItemRequest("Panadol", "Paracetamol", "500mg", "Oral", "1 tablet", "TID", 3, 9, "After meals", true)]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var prescription = result.Value.Prescription;
+        Assert.NotNull(prescription);
+        Assert.NotEmpty(prescription.VerificationCode);
+        Assert.NotEmpty(prescription.DigitalSignature);
+
+        var verification = await service.VerifyPrescriptionAsync(prescription.Id, prescription.VerificationCode, CancellationToken.None);
+        Assert.True(verification.IsSuccess);
+        Assert.True(verification.Value.IsValid);
+        Assert.Equal(prescription.DigitalSignature, verification.Value.DigitalSignature);
+
+        var pdf = await service.GeneratePrescriptionPdfAsync(prescription.Id, CancellationToken.None);
+
+        Assert.True(pdf.IsSuccess);
+        Assert.Equal("application/pdf", pdf.Value.ContentType);
+        Assert.EndsWith(".pdf", pdf.Value.FileName, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith("%PDF", Encoding.ASCII.GetString(pdf.Value.Content, 0, 4), StringComparison.Ordinal);
+    }
+
     private static HealthCareDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<HealthCareDbContext>()
@@ -84,7 +157,18 @@ public sealed class ConsultationServiceTests
         return new HealthCareDbContext(options);
     }
 
-    private static async Task<Appointment> SeedAppointmentAsync(HealthCareDbContext dbContext)
+    private static ConsultationService CreateDocumentEnabledService(HealthCareDbContext dbContext)
+    {
+        return new ConsultationService(
+            dbContext,
+            new QuestPdfPrescriptionDocumentService(),
+            Options.Create(new PrescriptionDocumentOptions
+            {
+                VerificationBaseUrl = "https://verify.healthcarems.local/api/v1/consultations/prescriptions"
+            }));
+    }
+
+    private static async Task<Appointment> SeedAppointmentAsync(HealthCareDbContext dbContext, string allergies = "[]")
     {
         var patientRole = new Role { Name = $"Patient-{Guid.NewGuid():N}", IsSystemRole = true };
         var doctorRole = new Role { Name = $"Doctor-{Guid.NewGuid():N}", IsSystemRole = true };
@@ -121,6 +205,12 @@ public sealed class ConsultationServiceTests
             Gender = Gender.Female,
             Phone = "+923001234567",
             IsActive = true
+        };
+        patient.MedicalHistory = new MedicalHistory
+        {
+            Patient = patient,
+            PatientId = patient.Id,
+            Allergies = allergies
         };
 
         var doctor = new Doctor

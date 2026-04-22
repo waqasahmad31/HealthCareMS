@@ -16,9 +16,12 @@ public sealed class PrescriptionConfiguration : IEntityTypeConfiguration<Prescri
         builder.Property(x => x.Icd10Code).HasMaxLength(20);
         builder.Property(x => x.Icd10Title).HasMaxLength(300);
         builder.Property(x => x.ClinicalNotes).HasMaxLength(4000);
+        builder.Property(x => x.VerificationCode).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.DigitalSignature).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).HasDefaultValue(PrescriptionStatus.Issued).IsRequired();
 
         builder.HasIndex(x => x.PrescriptionNumber).IsUnique();
+        builder.HasIndex(x => x.VerificationCode).IsUnique();
         builder.HasIndex(x => x.AppointmentId).IsUnique();
         builder.HasIndex(x => new { x.PatientId, x.IssuedAt });
         builder.HasQueryFilter(x => !x.IsDeleted);
@@ -42,4 +45,3 @@ public sealed class PrescriptionConfiguration : IEntityTypeConfiguration<Prescri
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
-

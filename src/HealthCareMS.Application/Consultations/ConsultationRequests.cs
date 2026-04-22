@@ -7,6 +7,8 @@ public sealed record CompleteConsultationRequest(
     DateOnly? FollowUpDate,
     IReadOnlyList<PrescriptionItemRequest> PrescriptionItems);
 
+public sealed record DrugAllergyCheckRequest(IReadOnlyList<PrescriptionItemRequest> PrescriptionItems);
+
 public sealed record PrescriptionItemRequest(
     string MedicineName,
     string? GenericName,
@@ -18,4 +20,3 @@ public sealed record PrescriptionItemRequest(
     decimal Quantity,
     string? Instructions,
     bool IsSubstitutionAllowed);
-

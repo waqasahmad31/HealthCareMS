@@ -5,12 +5,32 @@ public sealed record Icd10CodeModel(
     string Title,
     string Chapter);
 
+public sealed record DrapMedicineModel(
+    Guid Id,
+    string DrapRegistrationNumber,
+    string BrandName,
+    string GenericName,
+    string? Strength,
+    string DosageForm,
+    string? Manufacturer,
+    string AllergenKeywords,
+    bool IsBanned);
+
 public sealed record CompleteConsultationModel(
     string Diagnosis,
     string? Icd10Code,
     string? ClinicalNotes,
     DateOnly? FollowUpDate,
     IReadOnlyList<PrescriptionItemModel> PrescriptionItems);
+
+public sealed record DrugAllergyCheckModel(IReadOnlyList<PrescriptionItemModel> PrescriptionItems);
+
+public sealed record DrugAllergyWarningModel(
+    string MedicineName,
+    string? GenericName,
+    string MatchedAllergy,
+    string Severity,
+    string Message);
 
 public sealed record PrescriptionItemModel(
     string MedicineName,
@@ -46,6 +66,8 @@ public sealed record PrescriptionResultModel(
     DateTimeOffset IssuedAt,
     DateTimeOffset ValidUntil,
     string Status,
+    string VerificationCode,
+    string DigitalSignature,
     IReadOnlyList<PrescriptionItemResultModel> Items);
 
 public sealed record PrescriptionItemResultModel(

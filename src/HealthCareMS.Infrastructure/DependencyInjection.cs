@@ -49,6 +49,8 @@ public static class DependencyInjection
             configuration.GetSection(ConsultationSessionOptions.SectionName).Bind(options));
         services.Configure<ChatFileStorageOptions>(options =>
             configuration.GetSection(ChatFileStorageOptions.SectionName).Bind(options));
+        services.Configure<PrescriptionDocumentOptions>(options =>
+            configuration.GetSection(PrescriptionDocumentOptions.SectionName).Bind(options));
 
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<HealthCareDbContext>());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -64,6 +66,7 @@ public static class DependencyInjection
         services.AddScoped<IConsultationSessionService, ConsultationSessionService>();
         services.AddScoped<IChatFileStorage, LocalChatFileStorage>();
         services.AddScoped<IConsultationChatService, ConsultationChatService>();
+        services.AddScoped<IPrescriptionDocumentService, QuestPdfPrescriptionDocumentService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IPortalService, PortalService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();

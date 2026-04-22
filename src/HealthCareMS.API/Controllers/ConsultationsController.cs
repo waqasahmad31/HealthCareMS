@@ -136,12 +136,55 @@ public sealed class ConsultationsController(
         return FromResult(result);
     }
 
+    [HttpGet("drugs")]
+    [RequirePermission(PermissionKeys.Appointment.View)]
+    public async Task<IActionResult> SearchDrapMedicines([FromQuery] string? search, CancellationToken cancellationToken)
+    {
+        var results = await consultationService.SearchDrapMedicinesAsync(search, cancellationToken);
+        return OkEnvelope(results);
+    }
+
+    [HttpPost("patients/{patientId:guid}/drug-allergy-check")]
+    [RequirePermission(PermissionKeys.Consultation.PrescriptionCreate)]
+    public async Task<IActionResult> CheckDrugAllergies(
+        Guid patientId,
+        DrugAllergyCheckRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await consultationService.CheckDrugAllergiesAsync(patientId, request, cancellationToken);
+        return FromResult(result);
+    }
+
     [HttpGet("appointments/{appointmentId:guid}/prescription")]
     [RequirePermission(PermissionKeys.Appointment.View)]
     public async Task<IActionResult> GetPrescription(Guid appointmentId, CancellationToken cancellationToken)
     {
         var result = await consultationService.GetPrescriptionByAppointmentAsync(appointmentId, cancellationToken);
         return FromResult(result);
+    }
+
+    [AllowAnonymous]
+    [HttpGet("prescriptions/{prescriptionId:guid}/verify")]
+    public async Task<IActionResult> VerifyPrescription(
+        Guid prescriptionId,
+        [FromQuery] string code,
+        CancellationToken cancellationToken)
+    {
+        var result = await consultationService.VerifyPrescriptionAsync(prescriptionId, code, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("prescriptions/{prescriptionId:guid}/pdf")]
+    [RequirePermission(PermissionKeys.Appointment.View)]
+    public async Task<IActionResult> DownloadPrescriptionPdf(Guid prescriptionId, CancellationToken cancellationToken)
+    {
+        var result = await consultationService.GeneratePrescriptionPdfAsync(prescriptionId, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
     }
 
     [HttpGet("icd10")]

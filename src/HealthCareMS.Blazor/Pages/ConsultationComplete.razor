@@ -2,6 +2,7 @@
 @using HealthCareMS.Blazor.Models
 @using HealthCareMS.Blazor.Services
 @inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
 
 <PageTitle>Complete Consultation</PageTitle>
 
@@ -23,6 +24,10 @@
             <label>
                 AppointmentId
                 <InputText @bind-Value="Form.AppointmentIdText" />
+            </label>
+            <label>
+                PatientId
+                <InputText @bind-Value="Form.PatientIdText" />
             </label>
             <label>
                 ICD-10 Search
@@ -57,10 +62,41 @@
     <article class="panel">
         <div class="panel-header">
             <h2>Prescription</h2>
-            <button class="secondary-button" type="button" @onclick="AddMedicine">Add</button>
+            <div class="header-actions">
+                <button class="secondary-button" type="button" @onclick="CheckAllergiesAsync" disabled="@IsBusy">Check Allergies</button>
+                <button class="secondary-button" type="button" @onclick="AddMedicine" disabled="@IsBusy">Add</button>
+            </div>
         </div>
 
         <div class="prescription-builder">
+            <div class="medicine-search">
+                <label>
+                    DRAP Drug Search
+                    <input list="drap-medicine-options" value="@MedicineSearch" @oninput="OnMedicineSearchChanged" />
+                    <datalist id="drap-medicine-options">
+                        @foreach (var medicine in DrapMedicineResults)
+                        {
+                            <option value="@medicine.BrandName">@medicine.GenericName @medicine.Strength</option>
+                        }
+                    </datalist>
+                </label>
+                <button class="secondary-button" type="button" @onclick="SearchDrapMedicinesAsync" disabled="@IsBusy">Search</button>
+            </div>
+
+            @if (DrapMedicineResults.Count > 0)
+            {
+                <div class="drug-results">
+                    @foreach (var medicine in DrapMedicineResults)
+                    {
+                        <button class="@MedicineOptionClass(medicine)" type="button" @onclick="() => SelectMedicine(medicine)">
+                            <strong>@medicine.BrandName</strong>
+                            <span>@medicine.GenericName @medicine.Strength</span>
+                            <code>@medicine.DrapRegistrationNumber</code>
+                        </button>
+                    }
+                </div>
+            }
+
             <div class="medicine-form">
                 <label>
                     Medicine
@@ -104,6 +140,20 @@
                 </label>
             </div>
 
+            @if (AllergyWarnings.Count > 0)
+            {
+                <div class="warning-list" role="alert">
+                    @foreach (var warning in AllergyWarnings)
+                    {
+                        <div class="warning-item">
+                            <strong>@warning.Severity allergy warning</strong>
+                            <span>@warning.Message</span>
+                            <code>@warning.MatchedAllergy</code>
+                        </div>
+                    }
+                </div>
+            }
+
             <div class="table-shell prescription-list">
                 <div class="table-row table-head prescription-row">
                     <span>Medicine</span>
@@ -130,7 +180,10 @@
     <section class="panel prescription-result">
         <div class="panel-header">
             <h2>@Result.Prescription?.PrescriptionNumber</h2>
-            <span class="status-pill green">@Result.Status</span>
+            <div class="header-actions">
+                <span class="status-pill green">@Result.Status</span>
+                <button class="secondary-button" type="button" @onclick="DownloadPrescriptionPdfAsync" disabled="@IsBusy">PDF</button>
+            </div>
         </div>
         <div class="permission-grid">
             <div class="permission-row">
@@ -144,6 +197,14 @@
             <div class="permission-row">
                 <code>@(Result.Prescription?.Items.Count ?? 0)</code>
                 <span>Medicines</span>
+            </div>
+            <div class="permission-row">
+                <code>@Result.Prescription?.VerificationCode</code>
+                <span>Verification Code</span>
+            </div>
+            <div class="permission-row">
+                <code>@ShortSignature(Result.Prescription?.DigitalSignature)</code>
+                <span>Doctor Signature</span>
             </div>
         </div>
     </section>
@@ -163,9 +224,15 @@
 
     private IReadOnlyList<Icd10CodeModel> Icd10Results { get; set; } = [];
 
+    private IReadOnlyList<DrapMedicineModel> DrapMedicineResults { get; set; } = [];
+
+    private IReadOnlyList<DrugAllergyWarningModel> AllergyWarnings { get; set; } = [];
+
     private CompleteConsultationResultModel? Result { get; set; }
 
     private string Icd10Search { get; set; } = string.Empty;
+
+    private string MedicineSearch { get; set; } = string.Empty;
 
     private string FollowUpDateText { get; set; } = string.Empty;
 
@@ -178,6 +245,7 @@
     protected override async Task OnInitializedAsync()
     {
         await SearchIcd10Async();
+        await SearchDrapMedicinesAsync();
     }
 
     private async Task SearchIcd10Async()
@@ -196,7 +264,45 @@
         SetStatus(result?.Error?.Message ?? "ICD-10 lookup unavailable.", "tone-amber");
     }
 
-    private void AddMedicine()
+    private async Task SearchDrapMedicinesAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<DrapMedicineModel>>($"api/v1/consultations/drugs?search={Uri.EscapeDataString(MedicineSearch)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            DrapMedicineResults = result.Data;
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "DRAP drug lookup unavailable.", "tone-amber");
+    }
+
+    private async Task OnMedicineSearchChanged(ChangeEventArgs args)
+    {
+        MedicineSearch = args.Value?.ToString() ?? string.Empty;
+        if (MedicineSearch.Length == 0 || MedicineSearch.Length >= 2)
+        {
+            await SearchDrapMedicinesAsync();
+        }
+    }
+
+    private void SelectMedicine(DrapMedicineModel medicine)
+    {
+        MedicineSearch = $"{medicine.BrandName} ({medicine.GenericName})";
+        Medicine.MedicineName = medicine.BrandName;
+        Medicine.GenericName = medicine.GenericName;
+        Medicine.Strength = medicine.Strength;
+        Medicine.Route = Medicine.Route ?? "Oral";
+
+        if (medicine.IsBanned)
+        {
+            SetStatus($"{medicine.BrandName} is DRAP-banned and cannot be prescribed.", "tone-amber");
+        }
+    }
+
+    private async Task AddMedicine()
     {
         if (string.IsNullOrWhiteSpace(Medicine.MedicineName)
             || string.IsNullOrWhiteSpace(Medicine.Dosage)
@@ -221,12 +327,77 @@
             Medicine.IsSubstitutionAllowed));
 
         Medicine = new MedicineForm();
+        MedicineSearch = string.Empty;
+
+        if (Guid.TryParse(Form.PatientIdText, out _))
+        {
+            await CheckAllergiesAsync(isAutomatic: true);
+            return;
+        }
+
         SetStatus("Medicine added.", "tone-green");
     }
 
-    private void RemoveMedicine(PrescriptionItemModel item)
+    private async Task RemoveMedicine(PrescriptionItemModel item)
     {
         PrescriptionItems.Remove(item);
+        if (PrescriptionItems.Count == 0)
+        {
+            AllergyWarnings = [];
+            return;
+        }
+
+        if (Guid.TryParse(Form.PatientIdText, out _))
+        {
+            await CheckAllergiesAsync(isAutomatic: true);
+        }
+    }
+
+    private async Task CheckAllergiesAsync()
+    {
+        await CheckAllergiesAsync(isAutomatic: false);
+    }
+
+    private async Task CheckAllergiesAsync(bool isAutomatic)
+    {
+        if (PrescriptionItems.Count == 0)
+        {
+            AllergyWarnings = [];
+            if (!isAutomatic)
+            {
+                SetStatus("Add at least one medicine before allergy check.", "tone-amber");
+            }
+            return;
+        }
+
+        if (!Guid.TryParse(Form.PatientIdText, out var patientId))
+        {
+            if (!isAutomatic)
+            {
+                SetStatus("PatientId is required for allergy check.", "tone-amber");
+            }
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<DrugAllergyCheckModel, IReadOnlyList<DrugAllergyWarningModel>>(
+            $"api/v1/consultations/patients/{patientId}/drug-allergy-check",
+            new DrugAllergyCheckModel(PrescriptionItems));
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            AllergyWarnings = result.Data;
+            SetStatus(
+                AllergyWarnings.Count > 0 ? "Allergy warning detected. Review before completing." : "No allergy conflicts found.",
+                AllergyWarnings.Count > 0 ? "tone-amber" : "tone-green");
+            return;
+        }
+
+        if (!isAutomatic)
+        {
+            SetStatus(result?.Error?.Message ?? "Allergy check failed.", "tone-amber");
+        }
     }
 
     private async Task CompleteAsync()
@@ -235,6 +406,11 @@
         {
             SetStatus("AppointmentId is required.", "tone-amber");
             return;
+        }
+
+        if (Guid.TryParse(Form.PatientIdText, out _))
+        {
+            await CheckAllergiesAsync(isAutomatic: true);
         }
 
         var payload = new CompleteConsultationModel(
@@ -260,9 +436,48 @@
         SetStatus(result?.Error?.Message ?? "Consultation completion failed.", "tone-amber");
     }
 
+    private async Task DownloadPrescriptionPdfAsync()
+    {
+        var prescriptionId = Result?.Prescription?.Id;
+        if (prescriptionId is null)
+        {
+            SetStatus("Prescription PDF is unavailable.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var download = await ApiClient.DownloadFileAsync($"api/v1/consultations/prescriptions/{prescriptionId}/pdf");
+        IsBusy = false;
+
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Prescription PDF download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync(
+            "HealthCareMSMedia.downloadFile",
+            download.FileName,
+            download.ContentType,
+            Convert.ToBase64String(download.Content));
+        SetStatus("Prescription PDF downloaded.", "tone-green");
+    }
+
     private void OnFollowUpDateChanged(ChangeEventArgs args)
     {
         FollowUpDateText = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private string MedicineOptionClass(DrapMedicineModel medicine)
+    {
+        return medicine.IsBanned ? "drug-option banned" : "drug-option";
+    }
+
+    private static string ShortSignature(string? signature)
+    {
+        return string.IsNullOrWhiteSpace(signature) || signature.Length <= 24
+            ? signature ?? string.Empty
+            : $"{signature[..24]}...";
     }
 
     private void SetStatus(string message, string statusClass)
@@ -274,6 +489,8 @@
     private sealed class ConsultationForm
     {
         public string AppointmentIdText { get; set; } = string.Empty;
+
+        public string PatientIdText { get; set; } = string.Empty;
 
         public string? Icd10Code { get; set; }
 
