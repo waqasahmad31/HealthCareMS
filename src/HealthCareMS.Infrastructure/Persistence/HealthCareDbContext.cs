@@ -1,5 +1,6 @@
 using HealthCareMS.Application.Abstractions.Persistence;
 using HealthCareMS.Application.Abstractions.Tenancy;
+using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Common;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
@@ -37,6 +38,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
     public DbSet<Doctor> Doctors => Set<Doctor>();
 
     public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
+
+    public DbSet<Appointment> Appointments => Set<Appointment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

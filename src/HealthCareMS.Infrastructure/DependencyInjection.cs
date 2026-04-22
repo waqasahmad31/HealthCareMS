@@ -1,10 +1,12 @@
 using HealthCareMS.Application.Abstractions.Authentication;
 using HealthCareMS.Application.Abstractions.Persistence;
+using HealthCareMS.Application.Appointments;
 using HealthCareMS.Application.Doctors;
 using HealthCareMS.Application.Identity;
 using HealthCareMS.Application.Patients;
 using HealthCareMS.Application.Tenants;
 using HealthCareMS.Infrastructure.Authentication;
+using HealthCareMS.Infrastructure.Appointments;
 using HealthCareMS.Infrastructure.Doctors;
 using HealthCareMS.Infrastructure.Identity;
 using HealthCareMS.Infrastructure.Patients;
@@ -38,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<IPatientService, PatientService>();
         services.AddScoped<IDoctorService, DoctorService>();
         services.AddScoped<IIdentityManagementService, IdentityManagementService>();
+        services.AddScoped<IAppointmentService, AppointmentService>();
         services.AddScoped<DatabaseSeeder>();
 
         return services;
