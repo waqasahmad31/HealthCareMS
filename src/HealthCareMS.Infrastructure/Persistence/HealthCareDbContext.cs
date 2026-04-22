@@ -49,6 +49,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<PrescriptionItem> PrescriptionItems => Set<PrescriptionItem>();
 
+    public DbSet<ConsultationSession> ConsultationSessions => Set<ConsultationSession>();
+
     public DbSet<Notification> Notifications => Set<Notification>();
 
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();

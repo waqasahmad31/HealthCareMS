@@ -1,13 +1,53 @@
 using HealthCareMS.API.Security;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Domain.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HealthCareMS.API.Controllers;
 
 [Route("api/v1/consultations")]
-public sealed class ConsultationsController(IConsultationService consultationService) : ApiControllerBase
+public sealed class ConsultationsController(
+    IConsultationService consultationService,
+    IConsultationSessionService consultationSessionService) : ApiControllerBase
 {
+    [HttpPost("sessions")]
+    [RequirePermission(PermissionKeys.Consultation.VideoStart)]
+    public async Task<IActionResult> StartSession(
+        StartConsultationSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await consultationSessionService.StartAsync(request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [Authorize]
+    [HttpGet("sessions/{sessionId:guid}")]
+    public async Task<IActionResult> GetSession(Guid sessionId, CancellationToken cancellationToken)
+    {
+        var result = await consultationSessionService.GetByIdAsync(sessionId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpGet("appointments/{appointmentId:guid}/session")]
+    public async Task<IActionResult> GetSessionByAppointment(Guid appointmentId, CancellationToken cancellationToken)
+    {
+        var result = await consultationSessionService.GetByAppointmentAsync(appointmentId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpPost("sessions/{sessionId:guid}/join")]
+    public async Task<IActionResult> JoinSession(
+        Guid sessionId,
+        JoinConsultationSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await consultationSessionService.JoinAsync(sessionId, request, cancellationToken);
+        return FromResult(result);
+    }
+
     [HttpPut("appointments/{appointmentId:guid}/complete")]
     [RequirePermission(PermissionKeys.Consultation.PrescriptionCreate)]
     public async Task<IActionResult> CompleteAppointment(

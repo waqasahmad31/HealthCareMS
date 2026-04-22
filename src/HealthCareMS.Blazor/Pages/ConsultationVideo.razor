@@ -1,0 +1,241 @@
+@page "/consultation/video/{SessionId:guid}"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@inject HealthCareApiClient ApiClient
+@inject ApiEndpointOptions ApiEndpoints
+@inject IJSRuntime JsRuntime
+@implements IAsyncDisposable
+
+<PageTitle>Video Consultation</PageTitle>
+
+<section class="video-console">
+    <div class="video-stage">
+        <div class="remote-video">
+            <span>@RemoteLabel</span>
+            <strong>@(Session?.DoctorName ?? "Doctor")</strong>
+        </div>
+        <div class="local-video">
+            <video id="consolePreview" autoplay playsinline></video>
+            <span>@ParticipantType</span>
+        </div>
+    </div>
+
+    <aside class="video-side-panel">
+        <div class="panel-header">
+            <h2>Session</h2>
+            <span class="@ConnectionBadge">@ConnectionLabel</span>
+        </div>
+        @if (JoinResult is null)
+        {
+            <div class="empty-state">Joining session...</div>
+        }
+        else
+        {
+            <div class="session-summary compact-session-summary">
+                <div>
+                    <span>Status</span>
+                    <strong>@JoinResult.Session.Status</strong>
+                    <span>@JoinResult.ChannelName</span>
+                </div>
+                <div>
+                    <span>Patient</span>
+                    <strong>@JoinResult.Session.PatientName</strong>
+                    <span>@(JoinResult.PatientIsOnline ? "Online" : "Waiting")</span>
+                </div>
+                <div>
+                    <span>Doctor</span>
+                    <strong>@JoinResult.Session.DoctorName</strong>
+                    <span>@(JoinResult.DoctorIsOnline ? "Online" : "Waiting")</span>
+                </div>
+                <div>
+                    <span>Agora UID</span>
+                    <strong>@JoinResult.Uid</strong>
+                    <span>@JoinResult.ExpiresAt.LocalDateTime.ToString("HH:mm")</span>
+                </div>
+            </div>
+        }
+    </aside>
+</section>
+
+<section class="video-controls">
+    <button class="secondary-button" type="button" @onclick="ToggleMute">@MuteLabel</button>
+    <button class="secondary-button" type="button" @onclick="ToggleCamera">@CameraLabel</button>
+    <button class="secondary-button" type="button" @onclick="ShareScreenAsync">Share Screen</button>
+    <button class="primary-button" type="button" @onclick="ReloadSessionAsync" disabled="@IsBusy">Refresh</button>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    [Parameter]
+    public Guid SessionId { get; set; }
+
+    private ConsultationSessionModel? Session { get; set; }
+
+    private JoinConsultationSessionModel? JoinResult { get; set; }
+
+    private HubConnection? HubConnection { get; set; }
+
+    private string ParticipantType { get; set; } = "Patient";
+
+    private bool IsBusy { get; set; }
+
+    private bool IsMuted { get; set; }
+
+    private bool IsCameraOff { get; set; }
+
+    private bool PreviewStarted { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private string ConnectionLabel => HubConnection?.State == HubConnectionState.Connected ? "Live" : "Offline";
+
+    private string ConnectionBadge => HubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
+
+    private string RemoteLabel => ParticipantType == "Doctor" ? "Patient Feed" : "Doctor Feed";
+
+    private string MuteLabel => IsMuted ? "Unmute" : "Mute";
+
+    private string CameraLabel => IsCameraOff ? "Camera On" : "Camera Off";
+
+    protected override async Task OnInitializedAsync()
+    {
+        ParticipantType = GetRoleFromQuery();
+        await EnsureHubAsync();
+        await ReloadSessionAsync();
+        await JoinAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!PreviewStarted)
+        {
+            PreviewStarted = true;
+            var result = await JsRuntime.InvokeAsync<MediaPreviewResult>("HealthCareMSMedia.startPreview", "consolePreview");
+            SetStatus(result.Message, result.Success ? "tone-green" : "tone-amber");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReloadSessionAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<ConsultationSessionModel>($"api/v1/consultations/sessions/{SessionId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Session = result.Data;
+            if (HubConnection?.State == HubConnectionState.Connected)
+            {
+                await HubConnection.InvokeAsync("JoinSession", Session.Id);
+            }
+
+            SetStatus("Session loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Session unavailable.", "tone-amber");
+    }
+
+    private async Task JoinAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<JoinConsultationSessionRequestModel, JoinConsultationSessionModel>(
+            $"api/v1/consultations/sessions/{SessionId}/join",
+            new JoinConsultationSessionRequestModel { ParticipantType = ParticipantType });
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            JoinResult = result.Data;
+            Session = result.Data.Session;
+            SetStatus($"{ParticipantType} joined video session.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Join failed.", "tone-amber");
+    }
+
+    private async Task EnsureHubAsync()
+    {
+        HubConnection = new HubConnectionBuilder()
+            .WithUrl(ApiEndpoints.ConsultationHubUrl)
+            .WithAutomaticReconnect()
+            .Build();
+
+        HubConnection.On<object>("SessionChanged", _ =>
+        {
+            SetStatus("Session activity updated.", "tone-blue");
+            _ = InvokeAsync(ReloadSessionAsync);
+        });
+
+        await HubConnection.StartAsync();
+    }
+
+    private void ToggleMute()
+    {
+        IsMuted = !IsMuted;
+        SetStatus(IsMuted ? "Microphone muted." : "Microphone unmuted.", "tone-muted");
+    }
+
+    private void ToggleCamera()
+    {
+        IsCameraOff = !IsCameraOff;
+        SetStatus(IsCameraOff ? "Camera paused." : "Camera resumed.", "tone-muted");
+    }
+
+    private Task ShareScreenAsync()
+    {
+        SetStatus("Screen share requested.", "tone-blue");
+        return Task.CompletedTask;
+    }
+
+    private string GetRoleFromQuery()
+    {
+        var query = new Uri(NavigationManagerUri()).Query.TrimStart('?');
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 2
+                && string.Equals(Uri.UnescapeDataString(parts[0]), "role", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Uri.UnescapeDataString(parts[1]), "Doctor", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Doctor";
+            }
+        }
+
+        return "Patient";
+    }
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = null!;
+
+    private string NavigationManagerUri()
+    {
+        return Navigation.Uri;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.stopPreview", "consolePreview");
+        if (HubConnection is not null)
+        {
+            await HubConnection.DisposeAsync();
+        }
+    }
+
+    private sealed record MediaPreviewResult(bool Success, string Message, int VideoTracks, int AudioTracks);
+}

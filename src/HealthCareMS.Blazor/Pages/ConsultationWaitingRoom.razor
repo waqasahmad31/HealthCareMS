@@ -1,0 +1,249 @@
+@page "/consultation/waiting-room"
+@page "/consultation/waiting-room/{AppointmentId:guid}"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@inject HealthCareApiClient ApiClient
+@inject ApiEndpointOptions ApiEndpoints
+@inject IJSRuntime JsRuntime
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Waiting Room</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Online Consultation</p>
+        <h1>Waiting Room</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="StartPreviewAsync" disabled="@IsBusy">Test Camera</button>
+        <button class="primary-button" type="button" @onclick="JoinAsync" disabled="@(IsBusy || Session is null)">Join</button>
+    </div>
+</section>
+
+<section class="consultation-room-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Device Check</h2>
+            <span class="@ConnectionBadge">@ConnectionLabel</span>
+        </div>
+        <div class="video-preview-shell">
+            <video id="waitingPreview" autoplay playsinline></video>
+        </div>
+        <div class="entity-form compact-form">
+            <label>
+                AppointmentId
+                <InputText @bind-Value="AppointmentIdText" />
+            </label>
+            <label>
+                Join As
+                <select @bind="ParticipantType">
+                    <option>Patient</option>
+                    <option>Doctor</option>
+                </select>
+            </label>
+            <div class="header-actions">
+                <button class="secondary-button" type="button" @onclick="LoadSessionAsync" disabled="@IsBusy">Load Session</button>
+                <button class="secondary-button" type="button" @onclick="StartSessionAsync" disabled="@IsBusy">Start Session</button>
+            </div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Session</h2>
+            <span class="@StatusPill(Session?.Status)">@((Session?.Status) ?? "NotReady")</span>
+        </div>
+        @if (Session is null)
+        {
+            <div class="empty-state">Session not loaded.</div>
+        }
+        else
+        {
+            <div class="session-summary">
+                <div>
+                    <span>Patient</span>
+                    <strong>@Session.PatientName</strong>
+                    <span>@OnlineLabel(Session.PatientJoinedAt)</span>
+                </div>
+                <div>
+                    <span>Doctor</span>
+                    <strong>@Session.DoctorName</strong>
+                    <span>@OnlineLabel(Session.DoctorJoinedAt)</span>
+                </div>
+                <div>
+                    <span>Channel</span>
+                    <strong>@Session.ChannelName</strong>
+                    <span>@Session.AppointmentNumber</span>
+                </div>
+            </div>
+        }
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    [Parameter]
+    public Guid? AppointmentId { get; set; }
+
+    private ConsultationSessionModel? Session { get; set; }
+
+    private HubConnection? HubConnection { get; set; }
+
+    private string AppointmentIdText { get; set; } = string.Empty;
+
+    private string ParticipantType { get; set; } = "Patient";
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private string ConnectionLabel => HubConnection?.State == HubConnectionState.Connected ? "Live" : "Offline";
+
+    private string ConnectionBadge => HubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
+
+    protected override void OnParametersSet()
+    {
+        if (AppointmentId.HasValue && string.IsNullOrWhiteSpace(AppointmentIdText))
+        {
+            AppointmentIdText = AppointmentId.Value.ToString();
+        }
+    }
+
+    private async Task StartSessionAsync()
+    {
+        if (!Guid.TryParse(AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("AppointmentId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<StartConsultationSessionModel, ConsultationSessionModel>(
+            "api/v1/consultations/sessions",
+            new StartConsultationSessionModel { AppointmentId = appointmentId });
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            await SetSessionAsync(result.Data);
+            SetStatus("Consultation session started.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Session start failed.", "tone-amber");
+    }
+
+    private async Task LoadSessionAsync()
+    {
+        if (!Guid.TryParse(AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("AppointmentId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<ConsultationSessionModel>($"api/v1/consultations/appointments/{appointmentId}/session");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            await SetSessionAsync(result.Data);
+            SetStatus("Consultation session loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Session unavailable.", "tone-amber");
+    }
+
+    private async Task JoinAsync()
+    {
+        if (Session is null)
+        {
+            SetStatus("Session is required.", "tone-amber");
+            return;
+        }
+
+        Navigation.NavigateTo($"/consultation/video/{Session.Id}?role={ParticipantType}");
+        await Task.CompletedTask;
+    }
+
+    private async Task StartPreviewAsync()
+    {
+        IsBusy = true;
+        var result = await JsRuntime.InvokeAsync<MediaPreviewResult>("HealthCareMSMedia.startPreview", "waitingPreview");
+        IsBusy = false;
+        SetStatus(result.Message, result.Success ? "tone-green" : "tone-amber");
+    }
+
+    private async Task SetSessionAsync(ConsultationSessionModel session)
+    {
+        Session = session;
+        await EnsureHubAsync();
+        if (HubConnection?.State == HubConnectionState.Connected)
+        {
+            await HubConnection.InvokeAsync("JoinSession", session.Id);
+        }
+    }
+
+    private async Task EnsureHubAsync()
+    {
+        if (HubConnection is not null)
+        {
+            return;
+        }
+
+        HubConnection = new HubConnectionBuilder()
+            .WithUrl(ApiEndpoints.ConsultationHubUrl)
+            .WithAutomaticReconnect()
+            .Build();
+
+        HubConnection.On<object>("SessionChanged", _ =>
+        {
+            SetStatus("Session activity updated.", "tone-blue");
+            _ = InvokeAsync(StateHasChanged);
+        });
+
+        await HubConnection.StartAsync();
+    }
+
+    private static string OnlineLabel(DateTimeOffset? joinedAt)
+    {
+        return joinedAt.HasValue ? $"Joined {joinedAt.Value.LocalDateTime:HH:mm}" : "Not joined";
+    }
+
+    private static string StatusPill(string? status)
+    {
+        return status switch
+        {
+            "InProgress" => "status-pill green",
+            "Completed" => "status-pill green",
+            "Expired" => "status-pill amber",
+            _ => "status-pill blue"
+        };
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.stopPreview", "waitingPreview");
+        if (HubConnection is not null)
+        {
+            await HubConnection.DisposeAsync();
+        }
+    }
+
+    private sealed record MediaPreviewResult(bool Success, string Message, int VideoTracks, int AudioTracks);
+}

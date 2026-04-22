@@ -390,6 +390,128 @@ a, .btn-link {
     margin-bottom: 1rem;
 }
 
+.consultation-room-grid,
+.video-console {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.18fr);
+    margin-bottom: 1rem;
+}
+
+.video-preview-shell,
+.remote-video,
+.local-video {
+    background: #0f172a;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+.video-preview-shell {
+    aspect-ratio: 16 / 10;
+    margin-bottom: 1rem;
+}
+
+.video-preview-shell video,
+.local-video video {
+    height: 100%;
+    object-fit: cover;
+    width: 100%;
+}
+
+.session-summary {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.session-summary div {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.25rem;
+    min-height: 5rem;
+    padding: 0.8rem;
+}
+
+.session-summary span {
+    color: #64748b;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.video-console {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.34fr);
+}
+
+.video-stage {
+    background: #0f172a;
+    border-radius: 8px;
+    display: grid;
+    min-height: 32rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.remote-video {
+    align-items: center;
+    color: #e2e8f0;
+    display: grid;
+    justify-items: center;
+    min-height: 32rem;
+}
+
+.remote-video strong {
+    color: #ffffff;
+    font-size: 1.6rem;
+}
+
+.local-video {
+    aspect-ratio: 4 / 3;
+    bottom: 1rem;
+    border: 2px solid #e2e8f0;
+    max-width: 14rem;
+    position: absolute;
+    right: 1rem;
+    width: 28%;
+}
+
+.local-video span {
+    background: rgba(15, 23, 42, 0.8);
+    bottom: 0.45rem;
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 800;
+    left: 0.45rem;
+    padding: 0.18rem 0.45rem;
+    position: absolute;
+}
+
+.video-side-panel {
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+    padding: 1rem;
+}
+
+.compact-session-summary {
+    grid-template-columns: 1fr;
+}
+
+.video-controls {
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-bottom: 1rem;
+    padding: 0.8rem;
+}
+
 .prescription-builder {
     display: grid;
     gap: 1rem;
@@ -709,6 +831,9 @@ code {
     .queue-workspace,
     .doctor-queue-grid,
     .consultation-grid,
+    .consultation-room-grid,
+    .video-console,
+    .session-summary,
     .medicine-form,
     .notification-filter,
     .notification-item,
@@ -731,6 +856,15 @@ code {
     .module-grid {
         grid-template-columns: 1fr;
     }
+
+    .video-stage,
+    .remote-video {
+        min-height: 24rem;
+    }
+
+    .local-video {
+        width: 36%;
+    }
 }
 
 @media (max-width: 640px) {
@@ -742,5 +876,15 @@ code {
 
     .table-row {
         grid-template-columns: 1fr;
+    }
+
+    .video-controls {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .local-video {
+        max-width: 10rem;
+        width: 42%;
     }
 }

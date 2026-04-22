@@ -2,11 +2,13 @@ using System.Text;
 using System.Text.Json;
 using Hangfire;
 using Hangfire.MemoryStorage;
+using HealthCareMS.API.Consultations;
 using HealthCareMS.API.Hubs;
 using HealthCareMS.API.Notifications;
 using HealthCareMS.API.Security;
 using HealthCareMS.Application;
 using HealthCareMS.Application.Abstractions.Tenancy;
+using HealthCareMS.Application.Consultations;
 using HealthCareMS.Application.Notifications;
 using HealthCareMS.Infrastructure;
 using HealthCareMS.Infrastructure.Authentication;
@@ -42,6 +44,7 @@ builder.Services.AddSignalR();
 builder.Services.AddHangfire(configuration => configuration.UseMemoryStorage());
 builder.Services.AddHangfireServer();
 builder.Services.AddScoped<IInAppNotificationPublisher, SignalRInAppNotificationPublisher>();
+builder.Services.AddScoped<IConsultationSessionNotifier, SignalRConsultationSessionNotifier>();
 builder.Services.AddSingleton<IReminderScheduler, HangfireReminderScheduler>();
 builder.Services.AddCors(options =>
 {
@@ -101,5 +104,6 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 app.MapHub<QueueHub>("/hubs/queue");
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<ConsultationHub>("/hubs/consultations");
 
 await app.RunAsync();

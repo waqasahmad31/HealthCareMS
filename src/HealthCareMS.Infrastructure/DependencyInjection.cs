@@ -45,6 +45,8 @@ public static class DependencyInjection
             configuration.GetSection(SmtpOptions.SectionName).Bind(options));
         services.Configure<TwilioOptions>(options =>
             configuration.GetSection(TwilioOptions.SectionName).Bind(options));
+        services.Configure<ConsultationSessionOptions>(options =>
+            configuration.GetSection(ConsultationSessionOptions.SectionName).Bind(options));
 
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<HealthCareDbContext>());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -57,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<IAppointmentService, AppointmentService>();
         services.AddScoped<IAdminOperationsService, AdminOperationsService>();
         services.AddScoped<IConsultationService, ConsultationService>();
+        services.AddScoped<IConsultationSessionService, ConsultationSessionService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IPortalService, PortalService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();

@@ -49,14 +49,15 @@ public sealed class AppointmentService(
             return Result<AppointmentResponse>.Failure(new Error("APT_DOCTOR_UNAVAILABLE", "Doctor is not available for booking."));
         }
 
-        var endAt = request.ScheduledAt.AddMinutes(request.DurationMinutes);
-        var availability = ValidateAvailability(doctor.Schedules, request.ScheduledAt, endAt, parseResult.Value.Type);
+        var scheduledAt = request.ScheduledAt.ToUniversalTime();
+        var endAt = scheduledAt.AddMinutes(request.DurationMinutes);
+        var availability = ValidateAvailability(doctor.Schedules, scheduledAt, endAt, parseResult.Value.Type);
         if (availability.IsFailure)
         {
             return Result<AppointmentResponse>.Failure(availability.Error);
         }
 
-        var conflictExists = await HasSlotConflictAsync(request.DoctorId, request.ScheduledAt, endAt, excludedAppointmentId: null, cancellationToken);
+        var conflictExists = await HasSlotConflictAsync(request.DoctorId, scheduledAt, endAt, excludedAppointmentId: null, cancellationToken);
         if (conflictExists)
         {
             return Result<AppointmentResponse>.Failure(new Error("APT_SLOT_CONFLICT", "Slot is already booked by another patient."));
@@ -64,12 +65,12 @@ public sealed class AppointmentService(
 
         var appointment = new Appointment
         {
-            AppointmentNumber = await GenerateAppointmentNumberAsync(request.ScheduledAt, cancellationToken),
+            AppointmentNumber = await GenerateAppointmentNumberAsync(scheduledAt, cancellationToken),
             PatientId = request.PatientId,
             DoctorId = request.DoctorId,
             Patient = patient,
             Doctor = doctor,
-            ScheduledAt = request.ScheduledAt,
+            ScheduledAt = scheduledAt,
             EndAt = endAt,
             DurationMinutes = request.DurationMinutes,
             Type = parseResult.Value.Type,
@@ -79,7 +80,7 @@ public sealed class AppointmentService(
             PatientNotes = Normalize(request.PatientNotes),
             ConsultationFee = doctor.ConsultationFee,
             QueueNumber = parseResult.Value.Type == AppointmentType.OnSite
-                ? await GenerateQueueNumberAsync(request.DoctorId, request.ScheduledAt, cancellationToken)
+                ? await GenerateQueueNumberAsync(request.DoctorId, scheduledAt, cancellationToken)
                 : null,
             CreatedByUserId = currentUser.UserId
         };
@@ -159,6 +160,11 @@ public sealed class AppointmentService(
         }
 
         appointment.Status = AppointmentStatus.Confirmed;
+        if (appointment.Type == AppointmentType.Online)
+        {
+            appointment.MeetingLink ??= $"/consultation/waiting-room/{appointment.Id}";
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return Result<AppointmentResponse>.Success(Map(appointment));
@@ -227,25 +233,26 @@ public sealed class AppointmentService(
             return Result<AppointmentResponse>.Failure(scheduleValidation.Error);
         }
 
-        var endAt = request.ScheduledAt.AddMinutes(request.DurationMinutes);
-        var availability = ValidateAvailability(appointment.Doctor.Schedules, request.ScheduledAt, endAt, appointment.Type);
+        var scheduledAt = request.ScheduledAt.ToUniversalTime();
+        var endAt = scheduledAt.AddMinutes(request.DurationMinutes);
+        var availability = ValidateAvailability(appointment.Doctor.Schedules, scheduledAt, endAt, appointment.Type);
         if (availability.IsFailure)
         {
             return Result<AppointmentResponse>.Failure(availability.Error);
         }
 
-        var conflictExists = await HasSlotConflictAsync(appointment.DoctorId, request.ScheduledAt, endAt, appointment.Id, cancellationToken);
+        var conflictExists = await HasSlotConflictAsync(appointment.DoctorId, scheduledAt, endAt, appointment.Id, cancellationToken);
         if (conflictExists)
         {
             return Result<AppointmentResponse>.Failure(new Error("APT_SLOT_CONFLICT", "Slot is already booked by another patient."));
         }
 
-        appointment.ScheduledAt = request.ScheduledAt;
+        appointment.ScheduledAt = scheduledAt;
         appointment.EndAt = endAt;
         appointment.DurationMinutes = request.DurationMinutes;
         appointment.Status = AppointmentStatus.Pending;
         appointment.QueueNumber = appointment.Type == AppointmentType.OnSite
-            ? await GenerateQueueNumberAsync(appointment.DoctorId, request.ScheduledAt, cancellationToken)
+            ? await GenerateQueueNumberAsync(appointment.DoctorId, scheduledAt, cancellationToken)
             : null;
 
         await dbContext.SaveChangesAsync(cancellationToken);

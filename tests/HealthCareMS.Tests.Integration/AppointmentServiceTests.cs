@@ -38,6 +38,31 @@ public sealed class AppointmentServiceTests
     }
 
     [Fact]
+    public async Task BookAsync_ShouldNormalizeScheduledAtToUtc()
+    {
+        await using var dbContext = CreateDbContext();
+        var setup = await SeedAppointmentSetupAsync(dbContext);
+        var service = new AppointmentService(dbContext, new FakeCurrentUser(setup.PatientUserId));
+        var nonUtcScheduledAt = setup.ScheduledAt.ToOffset(TimeSpan.FromHours(5));
+
+        var result = await service.BookAsync(
+            new BookAppointmentRequest(
+                setup.PatientId,
+                setup.DoctorId,
+                nonUtcScheduledAt,
+                "Online",
+                30,
+                "Patient needs online consultation",
+                "Normal",
+                null),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(TimeSpan.Zero, result.Value.ScheduledAt.Offset);
+        Assert.Equal(setup.ScheduledAt.UtcDateTime, result.Value.ScheduledAt.UtcDateTime);
+    }
+
+    [Fact]
     public async Task BookAsync_ShouldRejectOverlappingSlot_ForSameDoctor()
     {
         await using var dbContext = CreateDbContext();
