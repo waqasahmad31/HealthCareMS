@@ -1,0 +1,71 @@
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">HealthCareMS</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="nav-symbol" aria-hidden="true">D</span> Dashboard
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="tenants">
+                <span class="nav-symbol" aria-hidden="true">T</span> Tenants
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="login">
+                <span class="nav-symbol" aria-hidden="true">A</span> Auth
+            </NavLink>
+        </div>
+        <div class="nav-section">Care</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="patients">
+                <span class="nav-symbol" aria-hidden="true">P</span> Patients
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="doctors">
+                <span class="nav-symbol" aria-hidden="true">M</span> Doctors
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="appointments">
+                <span class="nav-symbol" aria-hidden="true">Q</span> Appointments
+            </NavLink>
+        </div>
+        <div class="nav-section">Operations</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="pharmacy">
+                <span class="nav-symbol" aria-hidden="true">R</span> Pharmacy
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="laboratory">
+                <span class="nav-symbol" aria-hidden="true">L</span> Laboratory
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="payments">
+                <span class="nav-symbol" aria-hidden="true">C</span> Payments
+            </NavLink>
+        </div>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HealthCareMS.API/HealthCareMS.API.csproj" />
+    <Project Path="src/HealthCareMS.Application/HealthCareMS.Application.csproj" />
+    <Project Path="src/HealthCareMS.Blazor/HealthCareMS.Blazor.csproj" />
+    <Project Path="src/HealthCareMS.Domain/HealthCareMS.Domain.csproj" />
+    <Project Path="src/HealthCareMS.Infrastructure/HealthCareMS.Infrastructure.csproj" />
+    <Project Path="src/HealthCareMS.Shared/HealthCareMS.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HealthCareMS.Tests.Integration/HealthCareMS.Tests.Integration.csproj" />
+    <Project Path="tests/HealthCareMS.Tests.Unit/HealthCareMS.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

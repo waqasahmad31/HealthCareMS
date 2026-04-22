@@ -1,0 +1,82 @@
+@page "/tenants"
+
+<PageTitle>HealthCareMS Tenants</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Super Admin</p>
+        <h1>Tenants</h1>
+    </div>
+    <button class="primary-button">New Tenant</button>
+</section>
+
+<section class="panel split-panel">
+    <EditForm Model="TenantModel" class="entity-form">
+        <label>
+            Name
+            <InputText @bind-Value="TenantModel.Name" />
+        </label>
+        <label>
+            Tenant Type
+            <InputSelect @bind-Value="TenantModel.TenantType">
+                <option>Pharmacy</option>
+                <option>Lab</option>
+                <option>Clinic</option>
+                <option>Hospital</option>
+            </InputSelect>
+        </label>
+        <label>
+            Owner
+            <InputText @bind-Value="TenantModel.OwnerName" />
+        </label>
+        <label>
+            Email
+            <InputText @bind-Value="TenantModel.Email" type="email" />
+        </label>
+        <label>
+            Phone
+            <InputText @bind-Value="TenantModel.Phone" />
+        </label>
+        <label>
+            Subscription
+            <InputSelect @bind-Value="TenantModel.SubscriptionPlan">
+                <option>Basic</option>
+                <option>Standard</option>
+                <option>Premium</option>
+            </InputSelect>
+        </label>
+        <button type="button" class="primary-button">Save Tenant</button>
+    </EditForm>
+
+    <div class="table-shell">
+        <div class="table-row table-head">
+            <span>Tenant</span>
+            <span>Type</span>
+            <span>Status</span>
+        </div>
+        <div class="table-row">
+            <span>Awaiting first tenant</span>
+            <span>--</span>
+            <span class="status-pill amber">Empty</span>
+        </div>
+    </div>
+</section>
+
+@code {
+    private TenantForm TenantModel { get; } = new();
+
+    private sealed class TenantForm
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public string TenantType { get; set; } = "Pharmacy";
+
+        public string OwnerName { get; set; } = string.Empty;
+
+        public string Email { get; set; } = string.Empty;
+
+        public string Phone { get; set; } = string.Empty;
+
+        public string SubscriptionPlan { get; set; } = "Basic";
+    }
+}

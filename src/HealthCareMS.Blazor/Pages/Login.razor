@@ -1,0 +1,33 @@
+@page "/login"
+
+<PageTitle>HealthCareMS Auth</PageTitle>
+
+<section class="form-shell">
+    <div>
+        <p class="eyebrow">Authentication</p>
+        <h1>Sign In</h1>
+    </div>
+
+    <EditForm Model="LoginModel" class="entity-form">
+        <label>
+            Email
+            <InputText @bind-Value="LoginModel.Email" type="email" />
+        </label>
+        <label>
+            Password
+            <InputText @bind-Value="LoginModel.Password" type="password" />
+        </label>
+        <button class="primary-button" type="button">Login</button>
+    </EditForm>
+</section>
+
+@code {
+    private LoginForm LoginModel { get; } = new();
+
+    private sealed class LoginForm
+    {
+        public string Email { get; set; } = "superadmin@healthcarems.local";
+
+        public string Password { get; set; } = string.Empty;
+    }
+}

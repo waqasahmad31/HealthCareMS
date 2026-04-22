@@ -1,0 +1,25 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row">
+            <div>
+                <div class="eyebrow">Asia/Karachi</div>
+                <strong>Super Admin Workspace</strong>
+            </div>
+            <div class="top-actions">
+                <button class="icon-button" title="Notifications" aria-label="Notifications">N</button>
+                <span class="role-badge">SuperAdmin</span>
+                <button class="text-button">Logout</button>
+            </div>
+        </div>
+
+        <article class="content">
+            @Body
+        </article>
+    </main>
+</div>

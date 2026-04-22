@@ -1,0 +1,124 @@
+@page "/"
+
+<PageTitle>HealthCareMS Dashboard</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Enterprise Healthcare Management</p>
+        <h1>Operations Dashboard</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button">Export</button>
+        <button class="primary-button">Register Tenant</button>
+    </div>
+</section>
+
+<section class="stats-grid">
+    @foreach (var stat in Stats)
+    {
+        <article class="metric-card">
+            <span class="metric-label">@stat.Label</span>
+            <strong>@stat.Value</strong>
+            <span class="@stat.Tone">@stat.Change</span>
+        </article>
+    }
+</section>
+
+<section class="work-grid">
+    <article class="panel queue-panel">
+        <div class="panel-header">
+            <h2>Today</h2>
+            <span class="status-pill blue">Live</span>
+        </div>
+        <div class="queue-list">
+            @foreach (var item in Queue)
+            {
+                <div class="queue-row">
+                    <div>
+                        <strong>@item.Title</strong>
+                        <span>@item.Detail</span>
+                    </div>
+                    <span class="@item.BadgeClass">@item.Status</span>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Modules</h2>
+            <span class="status-pill green">Enabled</span>
+        </div>
+        <div class="module-grid">
+            @foreach (var module in Modules)
+            {
+                <div class="module-tile">
+                    <strong>@module.Name</strong>
+                    <span>@module.Status</span>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Permission Baseline</h2>
+        <span class="status-pill amber">Super Admin</span>
+    </div>
+    <div class="permission-grid">
+        @foreach (var permission in Permissions)
+        {
+            <div class="permission-row">
+                <code>@permission.Key</code>
+                <span>@permission.Scope</span>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private readonly DashboardStat[] Stats =
+    [
+        new("Active Tenants", "0", "Ready for onboarding", "tone-blue"),
+        new("Patients", "0", "Phase 1 pending", "tone-muted"),
+        new("Doctors", "0", "Verification flow next", "tone-amber"),
+        new("Revenue", "PKR 0", "Payments later", "tone-green")
+    ];
+
+    private readonly QueueItem[] Queue =
+    [
+        new("Tenant registry", "Identity schema and API are in place", "Ready", "status-pill green"),
+        new("Auth service", "JWT login endpoint is wired", "API", "status-pill blue"),
+        new("Patient module", "Profile commands are next", "Next", "status-pill amber"),
+        new("Doctor module", "Schedule and verification are next", "Next", "status-pill amber")
+    ];
+
+    private readonly ModuleTile[] Modules =
+    [
+        new("Identity", "Users, roles, permissions"),
+        new("Patient", "Profile foundation"),
+        new("Doctor", "Schedule foundation"),
+        new("Appointment", "Sprint 7"),
+        new("Pharmacy", "Phase 4"),
+        new("Laboratory", "Phase 5")
+    ];
+
+    private readonly PermissionPreview[] Permissions =
+    [
+        new("system.superadmin.*", "Platform"),
+        new("system.tenants.create", "Tenant Management"),
+        new("tenant.users.create", "Tenant Admin"),
+        new("pharmacy.orders.process", "Pharmacy"),
+        new("lab.results.release", "Laboratory"),
+        new("doctor.verify", "Doctor Admin")
+    ];
+
+    private sealed record DashboardStat(string Label, string Value, string Change, string Tone);
+
+    private sealed record QueueItem(string Title, string Detail, string Status, string BadgeClass);
+
+    private sealed record ModuleTile(string Name, string Status);
+
+    private sealed record PermissionPreview(string Key, string Scope);
+}
