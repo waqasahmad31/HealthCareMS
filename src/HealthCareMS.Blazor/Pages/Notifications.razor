@@ -1,0 +1,191 @@
+@page "/notifications"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject ApiEndpointOptions ApiEndpoints
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JS
+
+<PageTitle>Notifications</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Notification Center</p>
+        <h1>Notifications</h1>
+    </div>
+    <span class="@ConnectionBadge">@ConnectionLabel</span>
+</section>
+
+<section class="panel">
+    <div class="entity-form notification-filter">
+        <label>
+            UserId
+            <InputText @bind-Value="UserIdText" />
+        </label>
+        <label class="checkbox-label">
+            <InputCheckbox @bind-Value="UnreadOnly" />
+            Unread
+        </label>
+        <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Refresh</button>
+        <button class="primary-button" type="button" @onclick="ConnectAsync" disabled="@IsBusy">Live</button>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>List</h2>
+        <span class="status-pill blue">@NotificationsList.Count</span>
+    </div>
+
+    @if (NotificationsList.Count == 0)
+    {
+        <div class="empty-state">No notifications loaded.</div>
+    }
+    else
+    {
+        <div class="notification-list">
+            @foreach (var notification in NotificationsList)
+            {
+                <article class="notification-item @(notification.IsRead ? "read" : "unread")">
+                    <div>
+                        <strong>@notification.Subject</strong>
+                        <span>@notification.Body</span>
+                    </div>
+                    <div class="notification-meta">
+                        <span class="@StatusPill(notification.Status)">@notification.Status</span>
+                        <span>@notification.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                        @if (!notification.IsRead)
+                        {
+                            <button class="secondary-button small-button" type="button" @onclick="() => MarkReadAsync(notification)">Read</button>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private HubConnection? hubConnection;
+
+    private List<NotificationModel> NotificationsList { get; } = [];
+
+    private string UserIdText { get; set; } = string.Empty;
+
+    private bool UnreadOnly { get; set; }
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private string ConnectionLabel => hubConnection?.State == HubConnectionState.Connected ? "Live" : "Offline";
+
+    private string ConnectionBadge => hubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
+
+    private async Task ConnectAsync()
+    {
+        if (!Guid.TryParse(UserIdText, out var userId))
+        {
+            SetStatus("UserId is required.", "tone-amber");
+            return;
+        }
+
+        hubConnection ??= await CreateHubConnectionAsync();
+        if (hubConnection.State == HubConnectionState.Disconnected)
+        {
+            await hubConnection.StartAsync();
+        }
+
+        await hubConnection.InvokeAsync("JoinUserNotifications", userId);
+        await LoadAsync();
+        SetStatus("Live notification connection active.", "tone-green");
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Guid.TryParse(UserIdText, out var userId))
+        {
+            SetStatus("UserId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<NotificationModel>>(
+            $"api/v1/notifications?userId={userId}&unreadOnly={UnreadOnly}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            NotificationsList.Clear();
+            NotificationsList.AddRange(result.Data);
+            SetStatus("Notifications refreshed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Notifications unavailable.", "tone-amber");
+    }
+
+    private async Task MarkReadAsync(NotificationModel notification)
+    {
+        var result = await ApiClient.PutAsync<NotificationModel>($"api/v1/notifications/{notification.Id}/read?userId={notification.RecipientUserId}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            var index = NotificationsList.FindIndex(x => x.Id == notification.Id);
+            if (index >= 0)
+            {
+                NotificationsList[index] = result.Data;
+            }
+        }
+    }
+
+    private async Task<HubConnection> CreateHubConnectionAsync()
+    {
+        var connection = new HubConnectionBuilder()
+            .WithUrl(ApiEndpoints.NotificationHubUrl, options =>
+            {
+                options.AccessTokenProvider = async () => await JS.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.AccessToken");
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        connection.On<NotificationModel>("NotificationReceived", notification =>
+        {
+            NotificationsList.Insert(0, notification);
+            _ = InvokeAsync(StateHasChanged);
+        });
+
+        return connection;
+    }
+
+    private static string StatusPill(string status)
+    {
+        return status switch
+        {
+            "Sent" => "status-pill green",
+            "Failed" => "status-pill amber",
+            _ => "status-pill blue"
+        };
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

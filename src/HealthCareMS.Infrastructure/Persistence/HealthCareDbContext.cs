@@ -5,6 +5,7 @@ using HealthCareMS.Domain.Common;
 using HealthCareMS.Domain.Consultations;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
+using HealthCareMS.Domain.Notifications;
 using HealthCareMS.Domain.Patients;
 using Microsoft.EntityFrameworkCore;
 
@@ -45,6 +46,10 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
     public DbSet<Prescription> Prescriptions => Set<Prescription>();
 
     public DbSet<PrescriptionItem> PrescriptionItems => Set<PrescriptionItem>();
+
+    public DbSet<Notification> Notifications => Set<Notification>();
+
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

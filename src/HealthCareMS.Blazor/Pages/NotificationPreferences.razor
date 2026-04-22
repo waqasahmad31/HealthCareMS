@@ -1,0 +1,136 @@
+@page "/notifications/preferences"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Notification Preferences</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Notification Center</p>
+        <h1>Preferences</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="SaveAsync" disabled="@IsBusy">Save</button>
+</section>
+
+<section class="panel">
+    <div class="entity-form notification-filter">
+        <label>
+            UserId
+            <InputText @bind-Value="UserIdText" />
+        </label>
+        <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+    </div>
+</section>
+
+<section class="panel preferences-panel">
+    <EditForm Model="Preferences" class="preferences-grid">
+        <label class="preference-toggle">
+            <InputCheckbox @bind-Value="Preferences.EmailEnabled" />
+            <span>Email</span>
+        </label>
+        <label class="preference-toggle">
+            <InputCheckbox @bind-Value="Preferences.SmsEnabled" />
+            <span>SMS</span>
+        </label>
+        <label class="preference-toggle">
+            <InputCheckbox @bind-Value="Preferences.InAppEnabled" />
+            <span>In-App</span>
+        </label>
+        <label class="preference-toggle">
+            <InputCheckbox @bind-Value="Preferences.Reminder24HourEnabled" />
+            <span>24hr Reminders</span>
+        </label>
+        <label class="preference-toggle">
+            <InputCheckbox @bind-Value="Preferences.Reminder2HourEnabled" />
+            <span>2hr Reminders</span>
+        </label>
+    </EditForm>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private PreferencesForm Preferences { get; } = new();
+
+    private string UserIdText { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task LoadAsync()
+    {
+        if (!Guid.TryParse(UserIdText, out var userId))
+        {
+            SetStatus("UserId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<NotificationPreferenceModel>($"api/v1/notifications/preferences?userId={userId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Preferences.EmailEnabled = result.Data.EmailEnabled;
+            Preferences.SmsEnabled = result.Data.SmsEnabled;
+            Preferences.InAppEnabled = result.Data.InAppEnabled;
+            Preferences.Reminder24HourEnabled = result.Data.Reminder24HourEnabled;
+            Preferences.Reminder2HourEnabled = result.Data.Reminder2HourEnabled;
+            SetStatus("Preferences loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Preferences unavailable.", "tone-amber");
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Guid.TryParse(UserIdText, out var userId))
+        {
+            SetStatus("UserId is required.", "tone-amber");
+            return;
+        }
+
+        var payload = new UpdateNotificationPreferencesModel(
+            Preferences.EmailEnabled,
+            Preferences.SmsEnabled,
+            Preferences.InAppEnabled,
+            Preferences.Reminder24HourEnabled,
+            Preferences.Reminder2HourEnabled);
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdateNotificationPreferencesModel, NotificationPreferenceModel>(
+            $"api/v1/notifications/preferences?userId={userId}",
+            payload);
+        IsBusy = false;
+
+        SetStatus(result?.Success == true ? "Preferences saved." : result?.Error?.Message ?? "Preferences save failed.",
+            result?.Success == true ? "tone-green" : "tone-amber");
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private sealed class PreferencesForm
+    {
+        public bool EmailEnabled { get; set; } = true;
+
+        public bool SmsEnabled { get; set; } = true;
+
+        public bool InAppEnabled { get; set; } = true;
+
+        public bool Reminder24HourEnabled { get; set; } = true;
+
+        public bool Reminder2HourEnabled { get; set; } = true;
+    }
+}

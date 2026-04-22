@@ -1,9 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using Hangfire;
+using Hangfire.MemoryStorage;
 using HealthCareMS.API.Hubs;
+using HealthCareMS.API.Notifications;
 using HealthCareMS.API.Security;
 using HealthCareMS.Application;
 using HealthCareMS.Application.Abstractions.Tenancy;
+using HealthCareMS.Application.Notifications;
 using HealthCareMS.Infrastructure;
 using HealthCareMS.Infrastructure.Authentication;
 using HealthCareMS.Infrastructure.Seed;
@@ -35,6 +39,10 @@ builder.Services
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddSignalR();
+builder.Services.AddHangfire(configuration => configuration.UseMemoryStorage());
+builder.Services.AddHangfireServer();
+builder.Services.AddScoped<IInAppNotificationPublisher, SignalRInAppNotificationPublisher>();
+builder.Services.AddSingleton<IReminderScheduler, HangfireReminderScheduler>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
@@ -75,6 +83,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseHangfireDashboard("/hangfire");
 }
 
 if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))
@@ -91,5 +100,6 @@ app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapControllers();
 app.MapHub<QueueHub>("/hubs/queue");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 await app.RunAsync();

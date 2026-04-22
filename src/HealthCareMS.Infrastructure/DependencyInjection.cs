@@ -4,6 +4,7 @@ using HealthCareMS.Application.Appointments;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Application.Doctors;
 using HealthCareMS.Application.Identity;
+using HealthCareMS.Application.Notifications;
 using HealthCareMS.Application.Patients;
 using HealthCareMS.Application.Queues;
 using HealthCareMS.Application.Tenants;
@@ -12,6 +13,7 @@ using HealthCareMS.Infrastructure.Appointments;
 using HealthCareMS.Infrastructure.Consultations;
 using HealthCareMS.Infrastructure.Doctors;
 using HealthCareMS.Infrastructure.Identity;
+using HealthCareMS.Infrastructure.Notifications;
 using HealthCareMS.Infrastructure.Patients;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Infrastructure.Queues;
@@ -35,6 +37,10 @@ public static class DependencyInjection
 
         services.Configure<JwtOptions>(options =>
             configuration.GetSection(JwtOptions.SectionName).Bind(options));
+        services.Configure<SmtpOptions>(options =>
+            configuration.GetSection(SmtpOptions.SectionName).Bind(options));
+        services.Configure<TwilioOptions>(options =>
+            configuration.GetSection(TwilioOptions.SectionName).Bind(options));
 
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<HealthCareDbContext>());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -46,6 +52,9 @@ public static class DependencyInjection
         services.AddScoped<IIdentityManagementService, IdentityManagementService>();
         services.AddScoped<IAppointmentService, AppointmentService>();
         services.AddScoped<IConsultationService, ConsultationService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddHttpClient<ISmsSender, TwilioSmsSender>();
         services.AddScoped<IQueueService, QueueService>();
         services.AddScoped<DatabaseSeeder>();
 

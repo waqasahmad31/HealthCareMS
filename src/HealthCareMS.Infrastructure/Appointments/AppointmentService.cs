@@ -1,5 +1,6 @@
 using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Application.Appointments;
+using HealthCareMS.Application.Notifications;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Infrastructure.Persistence;
@@ -10,7 +11,8 @@ namespace HealthCareMS.Infrastructure.Appointments;
 
 public sealed class AppointmentService(
     HealthCareDbContext dbContext,
-    ICurrentUser currentUser) : IAppointmentService
+    ICurrentUser currentUser,
+    INotificationService? notificationService = null) : IAppointmentService
 {
     private static readonly short[] ValidDurations = [15, 20, 30, 45, 60];
 
@@ -84,6 +86,10 @@ public sealed class AppointmentService(
 
         dbContext.Appointments.Add(appointment);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (notificationService is not null)
+        {
+            await notificationService.NotifyAppointmentBookedAsync(appointment.Id, cancellationToken);
+        }
 
         return Result<AppointmentResponse>.Success(Map(appointment));
     }

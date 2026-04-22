@@ -446,6 +446,80 @@ a, .btn-link {
     margin-top: 1rem;
 }
 
+.notification-filter {
+    align-items: end;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.notification-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.notification-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) minmax(11rem, auto);
+    padding: 0.85rem;
+}
+
+.notification-item.unread {
+    background: #f0f9ff;
+    border-color: #bae6fd;
+}
+
+.notification-item.read {
+    background: #ffffff;
+}
+
+.notification-item div:first-child {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.notification-item span {
+    color: #64748b;
+    font-size: 0.88rem;
+}
+
+.notification-meta {
+    align-items: end;
+    display: grid;
+    gap: 0.35rem;
+    justify-items: end;
+}
+
+.preferences-panel {
+    max-width: 46rem;
+}
+
+.preferences-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preference-toggle {
+    align-items: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 3.2rem;
+    padding: 0.75rem;
+}
+
+.preference-toggle input {
+    height: 1.1rem;
+    width: 1.1rem;
+}
+
 .table-shell {
     display: grid;
     gap: 0.65rem;
@@ -563,6 +637,9 @@ code {
     .doctor-queue-grid,
     .consultation-grid,
     .medicine-form,
+    .notification-filter,
+    .notification-item,
+    .preferences-grid,
     .queue-filter,
     .queue-summary {
         grid-template-columns: 1fr;
