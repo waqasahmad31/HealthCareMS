@@ -1,0 +1,295 @@
+@page "/portal/patient"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Patient Portal</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Patient Portal</p>
+        <h1>@(Dashboard?.PatientName ?? "Dashboard")</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="LoadDashboardAsync" disabled="@IsBusy">Load</button>
+</section>
+
+<section class="panel">
+    <div class="entity-form portal-filter">
+        <label>
+            PatientId
+            <InputText @bind-Value="PatientIdText" />
+        </label>
+        <label>
+            AppointmentId
+            <InputText @bind-Value="AppointmentIdText" />
+        </label>
+        <label>
+            Status
+            <select @bind="AppointmentStatusFilter">
+                <option value="">All</option>
+                <option value="Pending">Pending</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="InProgress">InProgress</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+                <option value="NoShow">NoShow</option>
+            </select>
+        </label>
+        <button class="secondary-button" type="button" @onclick="LoadAppointmentsAsync" disabled="@IsBusy">Appointments</button>
+        <button class="secondary-button" type="button" @onclick="LoadDetailAsync" disabled="@IsBusy">Detail</button>
+    </div>
+</section>
+
+@if (Dashboard is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card">
+            <span class="metric-label">Upcoming</span>
+            <strong>@Dashboard.UpcomingCount</strong>
+            <span class="tone-blue">appointments</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Past</span>
+            <strong>@Dashboard.PastCount</strong>
+            <span class="tone-muted">records</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Next</span>
+            <strong>@(Dashboard.NextAppointment?.ScheduledAt.LocalDateTime.ToString("MMM dd") ?? "-")</strong>
+            <span class="tone-green">visit</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Actions</span>
+            <strong>@Dashboard.QuickActions.Count</strong>
+            <span class="tone-amber">available</span>
+        </article>
+    </section>
+
+    <section class="portal-grid">
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Upcoming</h2>
+                <span class="status-pill blue">@Dashboard.UpcomingAppointments.Count</span>
+            </div>
+            <div class="queue-list">
+                @foreach (var appointment in Dashboard.UpcomingAppointments)
+                {
+                    <div class="queue-row queue-entry-row">
+                        <div>
+                            <strong>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</strong>
+                            <span>@appointment.DoctorName - @appointment.ReasonForVisit</span>
+                        </div>
+                        <div class="queue-entry-meta">
+                            <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                            <span>@appointment.Type</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Past</h2>
+                <span class="status-pill green">@Dashboard.PastAppointments.Count</span>
+            </div>
+            <div class="table-shell">
+                @foreach (var appointment in Dashboard.PastAppointments)
+                {
+                    <div class="table-row portal-row">
+                        <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                        <span>@appointment.DoctorName</span>
+                        <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                    </div>
+                }
+            </div>
+        </article>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Quick Actions</h2>
+            <span class="status-pill amber">@Dashboard.QuickActions.Count</span>
+        </div>
+        <div class="module-grid">
+            @foreach (var action in Dashboard.QuickActions)
+            {
+                <div class="module-tile">
+                    <strong>@action</strong>
+                    <span>Ready</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (MyAppointments.Count > 0)
+{
+    <section class="panel">
+        <div class="panel-header">
+            <h2>My Appointments</h2>
+            <span class="status-pill blue">@MyAppointments.Count</span>
+        </div>
+        <div class="table-shell">
+            @foreach (var appointment in MyAppointments)
+            {
+                <div class="table-row portal-appointments-row">
+                    <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                    <span>@appointment.DoctorName</span>
+                    <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => LoadDetailAsync(appointment.Id)" disabled="@IsBusy">View</button>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (Detail is not null)
+{
+    <section class="panel">
+        <div class="panel-header">
+            <h2>@Detail.AppointmentNumber</h2>
+            <span class="@StatusPill(Detail.Status)">@Detail.Status</span>
+        </div>
+        <div class="permission-grid">
+            <div class="permission-row">
+                <code>@Detail.DoctorName</code>
+                <span>@Detail.ScheduledAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+            </div>
+            <div class="permission-row">
+                <code>@Detail.Icd10Code</code>
+                <span>@Detail.Diagnosis</span>
+            </div>
+            <div class="permission-row">
+                <code>@(Detail.Prescription?.PrescriptionNumber ?? "-")</code>
+                <span>@(Detail.Prescription?.ItemCount.ToString() ?? "0") medicines</span>
+            </div>
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private PatientPortalDashboardModel? Dashboard { get; set; }
+
+    private PortalAppointmentDetailModel? Detail { get; set; }
+
+    private IReadOnlyList<PortalAppointmentSummaryModel> MyAppointments { get; set; } = [];
+
+    private string PatientIdText { get; set; } = string.Empty;
+
+    private string AppointmentIdText { get; set; } = string.Empty;
+
+    private string AppointmentStatusFilter { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task LoadDashboardAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("PatientId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<PatientPortalDashboardModel>($"api/v1/portal/patients/{patientId}/dashboard");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Dashboard = result.Data;
+            await LoadAppointmentsForPatientAsync(patientId);
+            SetStatus("Patient dashboard loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient dashboard unavailable.", "tone-amber");
+    }
+
+    private async Task LoadAppointmentsAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("PatientId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        await LoadAppointmentsForPatientAsync(patientId);
+        IsBusy = false;
+    }
+
+    private async Task LoadDetailAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId) || !Guid.TryParse(AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("PatientId and AppointmentId are required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<PortalAppointmentDetailModel>(
+            $"api/v1/portal/patients/{patientId}/appointments/{appointmentId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Detail = result.Data;
+            SetStatus("Appointment detail loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Appointment detail unavailable.", "tone-amber");
+    }
+
+    private async Task LoadDetailAsync(Guid appointmentId)
+    {
+        AppointmentIdText = appointmentId.ToString();
+        await LoadDetailAsync();
+    }
+
+    private async Task LoadAppointmentsForPatientAsync(Guid patientId)
+    {
+        var statusQuery = string.IsNullOrWhiteSpace(AppointmentStatusFilter)
+            ? string.Empty
+            : $"?status={AppointmentStatusFilter}";
+        var result = await ApiClient.GetAsync<IReadOnlyList<PortalAppointmentSummaryModel>>(
+            $"api/v1/portal/patients/{patientId}/appointments{statusQuery}");
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            MyAppointments = result.Data;
+            SetStatus("Appointments loaded.", "tone-green");
+            return;
+        }
+
+        MyAppointments = [];
+        SetStatus(result?.Error?.Message ?? "Appointments unavailable.", "tone-amber");
+    }
+
+    private static string StatusPill(string status)
+    {
+        return status switch
+        {
+            "Completed" => "status-pill green",
+            "InProgress" => "status-pill blue",
+            "Cancelled" => "status-pill amber",
+            _ => "status-pill blue"
+        };
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

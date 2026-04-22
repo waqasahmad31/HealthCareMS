@@ -1,0 +1,243 @@
+@page "/portal/doctor"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Doctor Portal</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Doctor Portal</p>
+        <h1>@(Dashboard?.DoctorName ?? "Dashboard")</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="LoadDashboardAsync" disabled="@IsBusy">Load</button>
+</section>
+
+<section class="panel">
+    <div class="entity-form portal-filter">
+        <label>
+            DoctorId
+            <InputText @bind-Value="DoctorIdText" />
+        </label>
+        <label>
+            Date
+            <input type="date" value="@DashboardDateText" @onchange="OnDashboardDateChanged" />
+        </label>
+        <label>
+            PatientId
+            <InputText @bind-Value="PatientIdText" />
+        </label>
+        <button class="secondary-button" type="button" @onclick="LoadHistoryAsync" disabled="@IsBusy">History</button>
+    </div>
+</section>
+
+@if (Dashboard is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card">
+            <span class="metric-label">Today</span>
+            <strong>@Dashboard.TodayAppointmentCount</strong>
+            <span class="tone-blue">appointments</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Queue</span>
+            <strong>@Dashboard.WaitingQueueCount</strong>
+            <span class="tone-amber">waiting</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Completed</span>
+            <strong>@Dashboard.TodayCompletedCount</strong>
+            <span class="tone-green">done</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Fees</span>
+            <strong>@Dashboard.TodayConsultationFeeTotal.ToString("0")</strong>
+            <span class="tone-muted">today</span>
+        </article>
+    </section>
+
+    <section class="portal-grid">
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Today's Queue</h2>
+                <span class="status-pill blue">@Dashboard.InProgressCount active</span>
+            </div>
+            <div class="queue-list live-queue-list">
+                @foreach (var appointment in Dashboard.TodayAppointments)
+                {
+                    <div class="queue-row queue-entry-row">
+                        <div>
+                            <strong>@appointment.ScheduledAt.LocalDateTime.ToString("HH:mm") @appointment.PatientName</strong>
+                            <span>@appointment.ReasonForVisit</span>
+                        </div>
+                        <div class="queue-entry-meta">
+                            <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                            <span>Token @(appointment.QueueNumber?.ToString() ?? "-")</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Upcoming</h2>
+                <span class="status-pill green">@Dashboard.UpcomingAppointmentCount</span>
+            </div>
+            <div class="table-shell">
+                @foreach (var appointment in Dashboard.UpcomingAppointments)
+                {
+                    <div class="table-row portal-row">
+                        <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                        <span>@appointment.PatientName</span>
+                        <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                    </div>
+                }
+            </div>
+        </article>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>My Schedule</h2>
+            <span class="status-pill blue">@Dashboard.MySchedule.Count</span>
+        </div>
+        <div class="table-shell">
+            @foreach (var slot in Dashboard.MySchedule)
+            {
+                <div class="table-row schedule-row">
+                    <span>@slot.DayOfWeek</span>
+                    <span>@slot.StartTime.ToString("HH:mm") - @slot.EndTime.ToString("HH:mm")</span>
+                    <span>@slot.SlotDurationMinutes min</span>
+                    <span>@Availability(slot)</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (PatientHistory is not null)
+{
+    <section class="panel">
+        <div class="panel-header">
+            <h2>@PatientHistory.PatientName</h2>
+            <span class="status-pill amber">@PatientHistory.CompletedConsultations consults</span>
+        </div>
+        <div class="permission-grid">
+            <div class="permission-row">
+                <code>@PatientHistory.BloodGroup</code>
+                <span>@PatientHistory.Gender</span>
+            </div>
+            <div class="permission-row">
+                <code>Allergies</code>
+                <span>@PatientHistory.Allergies</span>
+            </div>
+            <div class="permission-row">
+                <code>Chronic</code>
+                <span>@PatientHistory.ChronicDiseases</span>
+            </div>
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private DoctorPortalDashboardModel? Dashboard { get; set; }
+
+    private PatientHistoryModel? PatientHistory { get; set; }
+
+    private string DoctorIdText { get; set; } = string.Empty;
+
+    private string PatientIdText { get; set; } = string.Empty;
+
+    private string DashboardDateText { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task LoadDashboardAsync()
+    {
+        if (!Guid.TryParse(DoctorIdText, out var doctorId))
+        {
+            SetStatus("DoctorId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<DoctorPortalDashboardModel>(
+            $"api/v1/portal/doctors/{doctorId}/dashboard?date={DashboardDateText}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Dashboard = result.Data;
+            SetStatus("Doctor dashboard loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor dashboard unavailable.", "tone-amber");
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (!Guid.TryParse(DoctorIdText, out var doctorId) || !Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("DoctorId and PatientId are required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<PatientHistoryModel>(
+            $"api/v1/portal/doctors/{doctorId}/patients/{patientId}/history");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            PatientHistory = result.Data;
+            SetStatus("Patient history loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient history unavailable.", "tone-amber");
+    }
+
+    private void OnDashboardDateChanged(ChangeEventArgs args)
+    {
+        DashboardDateText = args.Value?.ToString() ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
+    }
+
+    private static string Availability(PortalDoctorScheduleModel slot)
+    {
+        return (slot.IsOnlineAvailable, slot.IsOnSiteAvailable) switch
+        {
+            (true, true) => "Online + OnSite",
+            (true, false) => "Online",
+            (false, true) => "OnSite",
+            _ => "-"
+        };
+    }
+
+    private static string StatusPill(string status)
+    {
+        return status switch
+        {
+            "Completed" => "status-pill green",
+            "InProgress" => "status-pill blue",
+            "Cancelled" => "status-pill amber",
+            _ => "status-pill blue"
+        };
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}
