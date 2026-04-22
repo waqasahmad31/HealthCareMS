@@ -1,7 +1,11 @@
 using HealthCareMS.Application.Abstractions.Authentication;
 using HealthCareMS.Application.Abstractions.Persistence;
+using HealthCareMS.Application.Doctors;
+using HealthCareMS.Application.Patients;
 using HealthCareMS.Application.Tenants;
 using HealthCareMS.Infrastructure.Authentication;
+using HealthCareMS.Infrastructure.Doctors;
+using HealthCareMS.Infrastructure.Patients;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Infrastructure.Seed;
 using HealthCareMS.Infrastructure.Tenants;
@@ -29,6 +33,8 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ITenantService, TenantService>();
+        services.AddScoped<IPatientService, PatientService>();
+        services.AddScoped<IDoctorService, DoctorService>();
         services.AddScoped<DatabaseSeeder>();
 
         return services;
