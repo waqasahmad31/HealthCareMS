@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using HealthCareMS.API.Hubs;
 using HealthCareMS.API.Security;
 using HealthCareMS.Application;
 using HealthCareMS.Application.Abstractions.Tenancy;
@@ -33,6 +34,7 @@ builder.Services
 
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+builder.Services.AddSignalR();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
@@ -40,7 +42,8 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["https://localhost:5002"])
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -87,5 +90,6 @@ app.UseAuthorization();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
+app.MapHub<QueueHub>("/hubs/queue");
 
 await app.RunAsync();

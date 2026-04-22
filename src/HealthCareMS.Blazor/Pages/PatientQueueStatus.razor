@@ -1,0 +1,146 @@
+@page "/queue/patient"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject ApiEndpointOptions ApiEndpoints
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JS
+
+<PageTitle>Patient Queue Status</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Patient</p>
+        <h1>Queue Status</h1>
+    </div>
+    <span class="@ConnectionBadge">@ConnectionLabel</span>
+</section>
+
+<section class="panel">
+    <div class="entity-form queue-filter">
+        <label>
+            AppointmentId
+            <InputText @bind-Value="AppointmentIdText" />
+        </label>
+        <button class="primary-button" type="button" @onclick="ConnectAsync" disabled="@IsBusy">Track</button>
+    </div>
+</section>
+
+<section class="panel patient-status-panel">
+    @if (Status is not null)
+    {
+        <div class="patient-token">
+            <span>Token #@(Status.QueueNumber?.ToString() ?? "-")</span>
+            <strong>@Status.Status</strong>
+        </div>
+        <div class="queue-summary patient-summary">
+            <div>
+                <span>Position</span>
+                <strong>@Status.Position</strong>
+            </div>
+            <div>
+                <span>Wait</span>
+                <strong>@Status.EstimatedWaitMinutes min</strong>
+            </div>
+            <div>
+                <span>Doctor</span>
+                <strong>@Status.DoctorName</strong>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">No patient queue status loaded.</div>
+    }
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private HubConnection? hubConnection;
+
+    private PatientQueueStatusModel? Status { get; set; }
+
+    private string AppointmentIdText { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private string ConnectionLabel => hubConnection?.State == HubConnectionState.Connected ? "Live" : "Offline";
+
+    private string ConnectionBadge => hubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
+
+    private async Task ConnectAsync()
+    {
+        if (!Guid.TryParse(AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("AppointmentId is required.", "tone-amber");
+            return;
+        }
+
+        hubConnection ??= await CreateHubConnectionAsync();
+        if (hubConnection.State == HubConnectionState.Disconnected)
+        {
+            await hubConnection.StartAsync();
+        }
+
+        await hubConnection.InvokeAsync("JoinPatientQueue", appointmentId);
+        await LoadStatusAsync(appointmentId);
+    }
+
+    private async Task LoadStatusAsync(Guid appointmentId)
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<PatientQueueStatusModel>($"api/v1/queue/patients/{appointmentId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Status = result.Data;
+            SetStatus("Status refreshed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Queue status unavailable.", "tone-amber");
+    }
+
+    private async Task<HubConnection> CreateHubConnectionAsync()
+    {
+        var connection = new HubConnectionBuilder()
+            .WithUrl(ApiEndpoints.QueueHubUrl, options =>
+            {
+                options.AccessTokenProvider = async () => await JS.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.AccessToken");
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        connection.On<PatientQueueStatusModel>("PatientQueueUpdated", status =>
+        {
+            Status = status;
+            _ = InvokeAsync(StateHasChanged);
+        });
+
+        return connection;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

@@ -4,6 +4,7 @@ using HealthCareMS.Application.Appointments;
 using HealthCareMS.Application.Doctors;
 using HealthCareMS.Application.Identity;
 using HealthCareMS.Application.Patients;
+using HealthCareMS.Application.Queues;
 using HealthCareMS.Application.Tenants;
 using HealthCareMS.Infrastructure.Authentication;
 using HealthCareMS.Infrastructure.Appointments;
@@ -11,6 +12,7 @@ using HealthCareMS.Infrastructure.Doctors;
 using HealthCareMS.Infrastructure.Identity;
 using HealthCareMS.Infrastructure.Patients;
 using HealthCareMS.Infrastructure.Persistence;
+using HealthCareMS.Infrastructure.Queues;
 using HealthCareMS.Infrastructure.Seed;
 using HealthCareMS.Infrastructure.Tenants;
 using Microsoft.EntityFrameworkCore;
@@ -41,6 +43,7 @@ public static class DependencyInjection
         services.AddScoped<IDoctorService, DoctorService>();
         services.AddScoped<IIdentityManagementService, IdentityManagementService>();
         services.AddScoped<IAppointmentService, AppointmentService>();
+        services.AddScoped<IQueueService, QueueService>();
         services.AddScoped<DatabaseSeeder>();
 
         return services;

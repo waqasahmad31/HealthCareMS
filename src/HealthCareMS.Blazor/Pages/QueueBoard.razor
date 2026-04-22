@@ -1,0 +1,261 @@
+@page "/queue"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject ApiEndpointOptions ApiEndpoints
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JS
+
+<PageTitle>Queue Board</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Reception</p>
+        <h1>Queue Board</h1>
+    </div>
+    <span class="@ConnectionBadge">@ConnectionLabel</span>
+</section>
+
+<section class="queue-workspace">
+    <article class="panel queue-form-panel">
+        <div class="panel-header">
+            <h2>Walk-in</h2>
+            <span class="status-pill blue">OnSite</span>
+        </div>
+        <EditForm Model="WalkIn" OnValidSubmit="RegisterWalkInAsync" class="entity-form compact-form">
+            <label>
+                PatientId
+                <InputText @bind-Value="WalkIn.PatientIdText" />
+            </label>
+            <label>
+                DoctorId
+                <InputText @bind-Value="WalkIn.DoctorIdText" />
+            </label>
+            <label>
+                Reason
+                <InputTextArea @bind-Value="WalkIn.ReasonForVisit" />
+            </label>
+            <label>
+                Priority
+                <InputSelect @bind-Value="WalkIn.Priority">
+                    <option>Normal</option>
+                    <option>Low</option>
+                    <option>High</option>
+                    <option>Urgent</option>
+                </InputSelect>
+            </label>
+            <button class="primary-button" type="submit" disabled="@IsBusy">Register</button>
+        </EditForm>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Board</h2>
+            <button class="secondary-button" type="button" @onclick="LoadBoardAsync" disabled="@IsBusy">Refresh</button>
+        </div>
+        <div class="entity-form queue-filter">
+            <label>
+                DoctorId
+                <InputText @bind-Value="DoctorIdText" />
+            </label>
+            <label>
+                Date
+                <input type="date" value="@QueueDateText" @onchange="OnQueueDateChanged" />
+            </label>
+            <button class="secondary-button" type="button" @onclick="ConnectAsync">Connect</button>
+        </div>
+
+        <div class="queue-summary">
+            <div>
+                <span>Waiting</span>
+                <strong>@(Board?.WaitingCount ?? 0)</strong>
+            </div>
+            <div>
+                <span>In Progress</span>
+                <strong>@(Board?.InProgressCount ?? 0)</strong>
+            </div>
+            <div>
+                <span>Completed</span>
+                <strong>@(Board?.CompletedCount ?? 0)</strong>
+            </div>
+        </div>
+
+        @if (Board?.Entries.Count > 0)
+        {
+            <div class="queue-list live-queue-list">
+                @foreach (var entry in Board.Entries)
+                {
+                    <div class="queue-row queue-entry-row">
+                        <div>
+                            <strong>#@entry.QueueNumber @entry.PatientName</strong>
+                            <span>@entry.ReasonForVisit</span>
+                        </div>
+                        <div class="queue-entry-meta">
+                            <span class="@StatusPill(entry.Status)">@entry.Status</span>
+                            <span>@entry.EstimatedWaitMinutes min</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">No active queue entries.</div>
+        }
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private HubConnection? hubConnection;
+
+    private QueueBoardModel? Board { get; set; }
+
+    private WalkInForm WalkIn { get; } = new();
+
+    private string DoctorIdText { get; set; } = string.Empty;
+
+    private string QueueDateText { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private string ConnectionLabel => hubConnection?.State == HubConnectionState.Connected ? "Live" : "Offline";
+
+    private string ConnectionBadge => hubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
+
+    private void OnQueueDateChanged(ChangeEventArgs args)
+    {
+        QueueDateText = args.Value?.ToString() ?? DateTime.UtcNow.ToString("yyyy-MM-dd");
+    }
+
+    private async Task RegisterWalkInAsync()
+    {
+        if (!Guid.TryParse(WalkIn.PatientIdText, out var patientId) || !Guid.TryParse(WalkIn.DoctorIdText, out var doctorId))
+        {
+            SetStatus("PatientId and DoctorId are required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var payload = new WalkInRegistrationModel(patientId, doctorId, WalkIn.ReasonForVisit, WalkIn.Priority, WalkIn.PatientNotes);
+        var result = await ApiClient.PostAsync<WalkInRegistrationModel, QueueEntryModel>("api/v1/queue/walk-ins", payload);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            DoctorIdText = result.Data.DoctorId.ToString();
+            QueueDateText = result.Data.ScheduledAt.UtcDateTime.ToString("yyyy-MM-dd");
+            SetStatus($"Token #{result.Data.QueueNumber} registered.", "tone-green");
+            await ConnectAsync();
+            await LoadBoardAsync();
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Walk-in registration failed.", "tone-amber");
+    }
+
+    private async Task ConnectAsync()
+    {
+        if (!Guid.TryParse(DoctorIdText, out var doctorId))
+        {
+            SetStatus("DoctorId is required.", "tone-amber");
+            return;
+        }
+
+        hubConnection ??= await CreateHubConnectionAsync();
+        if (hubConnection.State == HubConnectionState.Disconnected)
+        {
+            await hubConnection.StartAsync();
+        }
+
+        await hubConnection.InvokeAsync("JoinDoctorQueue", doctorId, QueueDateText);
+        SetStatus("Queue connection active.", "tone-green");
+        await LoadBoardAsync();
+    }
+
+    private async Task LoadBoardAsync()
+    {
+        if (!Guid.TryParse(DoctorIdText, out var doctorId))
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<QueueBoardModel>($"api/v1/queue/doctors/{doctorId}?date={QueueDateText}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Board = result.Data;
+            SetStatus("Board refreshed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Board unavailable.", "tone-amber");
+    }
+
+    private async Task<HubConnection> CreateHubConnectionAsync()
+    {
+        var connection = new HubConnectionBuilder()
+            .WithUrl(ApiEndpoints.QueueHubUrl, options =>
+            {
+                options.AccessTokenProvider = async () => await JS.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.AccessToken");
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        connection.On<QueueBoardModel>("QueueUpdated", board =>
+        {
+            Board = board;
+            _ = InvokeAsync(StateHasChanged);
+        });
+
+        return connection;
+    }
+
+    private static string StatusPill(string status)
+    {
+        return status switch
+        {
+            "InProgress" => "status-pill blue",
+            "Completed" => "status-pill green",
+            _ => "status-pill amber"
+        };
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+    private sealed class WalkInForm
+    {
+        public string PatientIdText { get; set; } = string.Empty;
+
+        public string DoctorIdText { get; set; } = string.Empty;
+
+        public string ReasonForVisit { get; set; } = string.Empty;
+
+        public string Priority { get; set; } = "Normal";
+
+        public string? PatientNotes { get; set; }
+    }
+}

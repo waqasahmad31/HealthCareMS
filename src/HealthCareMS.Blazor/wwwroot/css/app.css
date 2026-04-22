@@ -260,12 +260,127 @@ a, .btn-link {
 }
 
 .entity-form input,
-.entity-form select {
+.entity-form select,
+.entity-form textarea {
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     min-height: 2.55rem;
     padding: 0 0.75rem;
     width: 100%;
+}
+
+.entity-form textarea {
+    min-height: 5rem;
+    padding-bottom: 0.65rem;
+    padding-top: 0.65rem;
+    resize: vertical;
+}
+
+.queue-workspace,
+.doctor-queue-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+    margin-bottom: 1rem;
+}
+
+.queue-form-panel {
+    align-self: start;
+}
+
+.compact-form {
+    gap: 0.7rem;
+}
+
+.queue-filter {
+    align-items: end;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) 10rem auto;
+    margin-bottom: 1rem;
+}
+
+.queue-summary {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 1rem;
+}
+
+.queue-summary div {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.25rem;
+    min-height: 4.6rem;
+    padding: 0.8rem;
+}
+
+.queue-summary span,
+.queue-entry-meta span:last-child,
+.next-patient span,
+.patient-token span {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.queue-summary strong {
+    font-size: 1.25rem;
+}
+
+.live-queue-list {
+    max-height: 28rem;
+    overflow: auto;
+}
+
+.queue-entry-row {
+    grid-template-columns: minmax(0, 1fr) minmax(7rem, auto);
+}
+
+.queue-entry-meta {
+    align-items: end;
+    display: grid;
+    gap: 0.35rem;
+    justify-items: end;
+}
+
+.empty-state {
+    align-items: center;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    color: #64748b;
+    display: flex;
+    justify-content: center;
+    min-height: 7rem;
+    padding: 1rem;
+    text-align: center;
+}
+
+.next-patient,
+.patient-token {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.next-patient strong,
+.patient-token strong {
+    font-size: 1.65rem;
+}
+
+.next-patient p {
+    color: #475569;
+    margin: 0 0 0.4rem;
+}
+
+.patient-status-panel {
+    max-width: 46rem;
+}
+
+.patient-summary {
+    margin-top: 1rem;
 }
 
 .table-shell {
@@ -380,7 +495,11 @@ code {
     .stats-grid,
     .permission-grid,
     .work-grid,
-    .split-panel {
+    .split-panel,
+    .queue-workspace,
+    .doctor-queue-grid,
+    .queue-filter,
+    .queue-summary {
         grid-template-columns: 1fr;
     }
 
