@@ -19,6 +19,8 @@ public sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appointm
         builder.Property(x => x.PaymentStatus).HasConversion<string>().HasMaxLength(20).HasDefaultValue(PaymentStatus.Pending).IsRequired();
         builder.Property(x => x.ReasonForVisit).HasMaxLength(1000);
         builder.Property(x => x.PatientNotes).HasMaxLength(2000);
+        builder.Property(x => x.Icd10Code).HasMaxLength(20);
+        builder.Property(x => x.Icd10Title).HasMaxLength(300);
         builder.Property(x => x.CancellationReason).HasMaxLength(1000);
         builder.Property(x => x.CancelledBy).HasMaxLength(20);
         builder.Property(x => x.ConsultationFee).HasPrecision(10, 2);

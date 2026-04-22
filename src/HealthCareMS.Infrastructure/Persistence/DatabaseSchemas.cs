@@ -6,6 +6,7 @@ public static class DatabaseSchemas
     public const string Patient = "Patient";
     public const string Doctor = "Doctor";
     public const string Appointment = "Appointment";
+    public const string Consultation = "Consultation";
     public const string Pharmacy = "Pharmacy";
     public const string Lab = "Lab";
     public const string Payment = "Payment";

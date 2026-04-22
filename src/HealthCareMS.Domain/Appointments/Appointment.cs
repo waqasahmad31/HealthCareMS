@@ -61,6 +61,10 @@ public sealed class Appointment : BaseEntity
 
     public string? Diagnosis { get; set; }
 
+    public string? Icd10Code { get; set; }
+
+    public string? Icd10Title { get; set; }
+
     public string? ClinicalNotes { get; set; }
 
     public DateOnly? FollowUpDate { get; set; }

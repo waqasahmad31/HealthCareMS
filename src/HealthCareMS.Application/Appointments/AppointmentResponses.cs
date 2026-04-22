@@ -16,6 +16,8 @@ public sealed record AppointmentResponse(
     string? ReasonForVisit,
     string? PatientNotes,
     string? Diagnosis,
+    string? Icd10Code,
+    string? Icd10Title,
     string? ClinicalNotes,
     DateOnly? FollowUpDate,
     string? CancellationReason,

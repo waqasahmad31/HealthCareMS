@@ -45,6 +45,20 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
     }
 
+    public async Task<ApiResponse<TResponse>?> PutAsync<TRequest, TResponse>(
+        string url,
+        TRequest payload,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, url)
+        {
+            Content = JsonContent.Create(payload)
+        };
+        await AddAuthorizationAsync(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ApiResponse<TResponse>>(cancellationToken);
+    }
+
     private async Task AddAuthorizationAsync(HttpRequestMessage request)
     {
         var token = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.AccessToken");

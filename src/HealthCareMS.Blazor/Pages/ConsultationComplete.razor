@@ -1,0 +1,307 @@
+@page "/consultation/complete"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Complete Consultation</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Doctor</p>
+        <h1>Complete Consultation</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="CompleteAsync" disabled="@IsBusy">Complete</button>
+</section>
+
+<section class="consultation-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Diagnosis</h2>
+            <span class="status-pill blue">ICD-10</span>
+        </div>
+        <EditForm Model="Form" class="entity-form">
+            <label>
+                AppointmentId
+                <InputText @bind-Value="Form.AppointmentIdText" />
+            </label>
+            <label>
+                ICD-10 Search
+                <InputText @bind-Value="Icd10Search" />
+            </label>
+            <button class="secondary-button" type="button" @onclick="SearchIcd10Async" disabled="@IsBusy">Search</button>
+            <label>
+                ICD-10 Code
+                <InputSelect @bind-Value="Form.Icd10Code">
+                    <option value="">Uncoded</option>
+                    @foreach (var code in Icd10Results)
+                    {
+                        <option value="@(code.Code)">@(code.Code) - @(code.Title)</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>
+                Diagnosis
+                <InputTextArea @bind-Value="Form.Diagnosis" />
+            </label>
+            <label>
+                ClinicalNotes
+                <InputTextArea @bind-Value="Form.ClinicalNotes" />
+            </label>
+            <label>
+                FollowUpDate
+                <input type="date" value="@FollowUpDateText" @onchange="OnFollowUpDateChanged" />
+            </label>
+        </EditForm>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Prescription</h2>
+            <button class="secondary-button" type="button" @onclick="AddMedicine">Add</button>
+        </div>
+
+        <div class="prescription-builder">
+            <div class="medicine-form">
+                <label>
+                    Medicine
+                    <InputText @bind-Value="Medicine.MedicineName" />
+                </label>
+                <label>
+                    Generic
+                    <InputText @bind-Value="Medicine.GenericName" />
+                </label>
+                <label>
+                    Strength
+                    <InputText @bind-Value="Medicine.Strength" />
+                </label>
+                <label>
+                    Route
+                    <InputText @bind-Value="Medicine.Route" />
+                </label>
+                <label>
+                    Dosage
+                    <InputText @bind-Value="Medicine.Dosage" />
+                </label>
+                <label>
+                    Frequency
+                    <InputText @bind-Value="Medicine.Frequency" />
+                </label>
+                <label>
+                    DurationDays
+                    <InputNumber @bind-Value="Medicine.DurationDays" />
+                </label>
+                <label>
+                    Quantity
+                    <InputNumber @bind-Value="Medicine.Quantity" />
+                </label>
+                <label class="full-span">
+                    Instructions
+                    <InputText @bind-Value="Medicine.Instructions" />
+                </label>
+                <label class="checkbox-label">
+                    <InputCheckbox @bind-Value="Medicine.IsSubstitutionAllowed" />
+                    Substitution
+                </label>
+            </div>
+
+            <div class="table-shell prescription-list">
+                <div class="table-row table-head prescription-row">
+                    <span>Medicine</span>
+                    <span>Dose</span>
+                    <span>Qty</span>
+                    <span></span>
+                </div>
+                @foreach (var item in PrescriptionItems)
+                {
+                    <div class="table-row prescription-row">
+                        <span>@item.MedicineName</span>
+                        <span>@item.Dosage / @item.Frequency</span>
+                        <span>@item.Quantity</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => RemoveMedicine(item)">Remove</button>
+                    </div>
+                }
+            </div>
+        </div>
+    </article>
+</section>
+
+@if (Result is not null)
+{
+    <section class="panel prescription-result">
+        <div class="panel-header">
+            <h2>@Result.Prescription?.PrescriptionNumber</h2>
+            <span class="status-pill green">@Result.Status</span>
+        </div>
+        <div class="permission-grid">
+            <div class="permission-row">
+                <code>@Result.Icd10Code</code>
+                <span>@Result.Icd10Title</span>
+            </div>
+            <div class="permission-row">
+                <code>@Result.AppointmentNumber</code>
+                <span>@Result.Diagnosis</span>
+            </div>
+            <div class="permission-row">
+                <code>@(Result.Prescription?.Items.Count ?? 0)</code>
+                <span>Medicines</span>
+            </div>
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private ConsultationForm Form { get; } = new();
+
+    private MedicineForm Medicine { get; set; } = new();
+
+    private List<PrescriptionItemModel> PrescriptionItems { get; } = [];
+
+    private IReadOnlyList<Icd10CodeModel> Icd10Results { get; set; } = [];
+
+    private CompleteConsultationResultModel? Result { get; set; }
+
+    private string Icd10Search { get; set; } = string.Empty;
+
+    private string FollowUpDateText { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await SearchIcd10Async();
+    }
+
+    private async Task SearchIcd10Async()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<Icd10CodeModel>>($"api/v1/consultations/icd10?search={Uri.EscapeDataString(Icd10Search)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Icd10Results = result.Data;
+            Form.Icd10Code = Icd10Results.FirstOrDefault()?.Code;
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "ICD-10 lookup unavailable.", "tone-amber");
+    }
+
+    private void AddMedicine()
+    {
+        if (string.IsNullOrWhiteSpace(Medicine.MedicineName)
+            || string.IsNullOrWhiteSpace(Medicine.Dosage)
+            || string.IsNullOrWhiteSpace(Medicine.Frequency)
+            || Medicine.DurationDays <= 0
+            || Medicine.Quantity <= 0)
+        {
+            SetStatus("Medicine, dosage, frequency, duration, and quantity are required.", "tone-amber");
+            return;
+        }
+
+        PrescriptionItems.Add(new PrescriptionItemModel(
+            Medicine.MedicineName,
+            Medicine.GenericName,
+            Medicine.Strength,
+            Medicine.Route,
+            Medicine.Dosage,
+            Medicine.Frequency,
+            Medicine.DurationDays,
+            Medicine.Quantity,
+            Medicine.Instructions,
+            Medicine.IsSubstitutionAllowed));
+
+        Medicine = new MedicineForm();
+        SetStatus("Medicine added.", "tone-green");
+    }
+
+    private void RemoveMedicine(PrescriptionItemModel item)
+    {
+        PrescriptionItems.Remove(item);
+    }
+
+    private async Task CompleteAsync()
+    {
+        if (!Guid.TryParse(Form.AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("AppointmentId is required.", "tone-amber");
+            return;
+        }
+
+        var payload = new CompleteConsultationModel(
+            Form.Diagnosis,
+            string.IsNullOrWhiteSpace(Form.Icd10Code) ? null : Form.Icd10Code,
+            Form.ClinicalNotes,
+            string.IsNullOrWhiteSpace(FollowUpDateText) ? null : DateOnly.Parse(FollowUpDateText),
+            PrescriptionItems);
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<CompleteConsultationModel, CompleteConsultationResultModel>(
+            $"api/v1/consultations/appointments/{appointmentId}/complete",
+            payload);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Result = result.Data;
+            SetStatus("Consultation completed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Consultation completion failed.", "tone-amber");
+    }
+
+    private void OnFollowUpDateChanged(ChangeEventArgs args)
+    {
+        FollowUpDateText = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private sealed class ConsultationForm
+    {
+        public string AppointmentIdText { get; set; } = string.Empty;
+
+        public string? Icd10Code { get; set; }
+
+        public string Diagnosis { get; set; } = string.Empty;
+
+        public string? ClinicalNotes { get; set; }
+    }
+
+    private sealed class MedicineForm
+    {
+        public string MedicineName { get; set; } = string.Empty;
+
+        public string? GenericName { get; set; }
+
+        public string? Strength { get; set; }
+
+        public string? Route { get; set; } = "Oral";
+
+        public string Dosage { get; set; } = string.Empty;
+
+        public string Frequency { get; set; } = string.Empty;
+
+        public short DurationDays { get; set; } = 5;
+
+        public decimal Quantity { get; set; } = 10;
+
+        public string? Instructions { get; set; }
+
+        public bool IsSubstitutionAllowed { get; set; } = true;
+    }
+}

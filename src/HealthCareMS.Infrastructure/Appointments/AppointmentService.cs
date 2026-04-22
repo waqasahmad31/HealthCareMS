@@ -449,6 +449,8 @@ public sealed class AppointmentService(
             appointment.ReasonForVisit,
             appointment.PatientNotes,
             appointment.Diagnosis,
+            appointment.Icd10Code,
+            appointment.Icd10Title,
             appointment.ClinicalNotes,
             appointment.FollowUpDate,
             appointment.CancellationReason,
