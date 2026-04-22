@@ -1,4 +1,5 @@
 using HealthCareMS.API.Security;
+using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Domain.Identity;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +10,9 @@ namespace HealthCareMS.API.Controllers;
 [Route("api/v1/consultations")]
 public sealed class ConsultationsController(
     IConsultationService consultationService,
-    IConsultationSessionService consultationSessionService) : ApiControllerBase
+    IConsultationSessionService consultationSessionService,
+    IConsultationChatService consultationChatService,
+    ICurrentUser currentUser) : ApiControllerBase
 {
     [HttpPost("sessions")]
     [RequirePermission(PermissionKeys.Consultation.VideoStart)]
@@ -46,6 +49,80 @@ public sealed class ConsultationsController(
     {
         var result = await consultationSessionService.JoinAsync(sessionId, request, cancellationToken);
         return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpGet("sessions/{sessionId:guid}/chat/messages")]
+    public async Task<IActionResult> GetChatMessages(Guid sessionId, CancellationToken cancellationToken)
+    {
+        var result = await consultationChatService.GetMessagesAsync(sessionId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpPost("sessions/{sessionId:guid}/chat/messages")]
+    public async Task<IActionResult> SendChatMessage(
+        Guid sessionId,
+        SendChatMessageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await consultationChatService.SendMessageAsync(
+            sessionId,
+            request,
+            currentUser.UserId,
+            cancellationToken);
+
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [Authorize]
+    [HttpPost("sessions/{sessionId:guid}/chat/attachments")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadChatAttachment(
+        Guid sessionId,
+        [FromForm] string participantType,
+        [FromForm] string senderDisplayName,
+        [FromForm] IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = file.OpenReadStream();
+        var result = await consultationChatService.UploadAttachmentAsync(
+            sessionId,
+            new UploadChatAttachmentRequest(
+                participantType,
+                senderDisplayName,
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                stream),
+            currentUser.UserId,
+            cancellationToken);
+
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [Authorize]
+    [HttpPut("sessions/{sessionId:guid}/chat/read")]
+    public async Task<IActionResult> MarkChatMessagesRead(
+        Guid sessionId,
+        MarkChatMessagesReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await consultationChatService.MarkReadAsync(sessionId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpGet("chat/messages/{messageId:guid}/attachment")]
+    public async Task<IActionResult> DownloadChatAttachment(Guid messageId, CancellationToken cancellationToken)
+    {
+        var result = await consultationChatService.DownloadAttachmentAsync(messageId, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
     }
 
     [HttpPut("appointments/{appointmentId:guid}/complete")]

@@ -34,4 +34,20 @@ window.HealthCareMSMedia = {
       video.srcObject = null;
     }
   },
+  downloadFile(fileName, contentType, base64Content) {
+    const link = document.createElement("a");
+    const byteCharacters = atob(base64Content);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let index = 0; index < byteCharacters.length; index += 1) {
+      byteNumbers[index] = byteCharacters.charCodeAt(index);
+    }
+
+    const blob = new Blob([new Uint8Array(byteNumbers)], { type: contentType });
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName || "Attachment";
+    document.body.appendChild(link);
+    link.click();
+    URL.revokeObjectURL(link.href);
+    link.remove();
+  },
 };

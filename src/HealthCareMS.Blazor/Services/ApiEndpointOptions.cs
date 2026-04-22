@@ -9,4 +9,6 @@ public sealed record ApiEndpointOptions(string BaseAddress)
     public string NotificationHubUrl => new Uri(BaseUri, "hubs/notifications").ToString();
 
     public string ConsultationHubUrl => new Uri(BaseUri, "hubs/consultations").ToString();
+
+    public string ConsultationChatHubUrl => new Uri(BaseUri, "hubs/consultation-chat").ToString();
 }

@@ -1,4 +1,5 @@
 @page "/consultation/video/{SessionId:guid}"
+@using System.Net.Http.Headers
 @using HealthCareMS.Blazor.Models
 @using HealthCareMS.Blazor.Services
 @using Microsoft.AspNetCore.SignalR.Client
@@ -22,37 +23,88 @@
     </div>
 
     <aside class="video-side-panel">
-        <div class="panel-header">
-            <h2>Session</h2>
-            <span class="@ConnectionBadge">@ConnectionLabel</span>
+        <div class="consultation-tabs">
+            <button class="@TabClass("Session")" type="button" @onclick='() => ActiveTab = "Session"'>Session</button>
+            <button class="@TabClass("Chat")" type="button" @onclick='() => ActiveTab = "Chat"'>Chat</button>
         </div>
-        @if (JoinResult is null)
+
+        @if (ActiveTab == "Session")
         {
-            <div class="empty-state">Joining session...</div>
+            <div class="panel-header">
+                <h2>Session</h2>
+                <span class="@ConnectionBadge">@ConnectionLabel</span>
+            </div>
+            @if (JoinResult is null)
+            {
+                <div class="empty-state">Joining session...</div>
+            }
+            else
+            {
+                <div class="session-summary compact-session-summary">
+                    <div>
+                        <span>Status</span>
+                        <strong>@JoinResult.Session.Status</strong>
+                        <span>@JoinResult.ChannelName</span>
+                    </div>
+                    <div>
+                        <span>Patient</span>
+                        <strong>@JoinResult.Session.PatientName</strong>
+                        <span>@(JoinResult.PatientIsOnline ? "Online" : "Waiting")</span>
+                    </div>
+                    <div>
+                        <span>Doctor</span>
+                        <strong>@JoinResult.Session.DoctorName</strong>
+                        <span>@(JoinResult.DoctorIsOnline ? "Online" : "Waiting")</span>
+                    </div>
+                    <div>
+                        <span>Agora UID</span>
+                        <strong>@JoinResult.Uid</strong>
+                        <span>@JoinResult.ExpiresAt.LocalDateTime.ToString("HH:mm")</span>
+                    </div>
+                </div>
+            }
         }
         else
         {
-            <div class="session-summary compact-session-summary">
-                <div>
-                    <span>Status</span>
-                    <strong>@JoinResult.Session.Status</strong>
-                    <span>@JoinResult.ChannelName</span>
+            <div class="panel-header">
+                <h2>Chat</h2>
+                <span class="@ChatConnectionBadge">@ChatConnectionLabel</span>
+            </div>
+            <div class="chat-list">
+                @if (ChatMessages.Count == 0)
+                {
+                    <div class="empty-state">No messages yet.</div>
+                }
+                @foreach (var message in ChatMessages)
+                {
+                    <div class="@ChatMessageClass(message)">
+                        <div>
+                            <strong>@message.SenderDisplayName</strong>
+                            <span>@message.SentAt.LocalDateTime.ToString("HH:mm")</span>
+                        </div>
+                        @if (message.MessageType == "File")
+                        {
+                            <button class="secondary-button small-button chat-file-button" type="button" @onclick="() => DownloadAttachmentAsync(message)" disabled="@IsBusy">
+                                @message.AttachmentFileName
+                            </button>
+                        }
+                        else
+                        {
+                            <p>@message.MessageText</p>
+                        }
+                        <span>@ReadReceiptLabel(message)</span>
+                    </div>
+                }
+            </div>
+            <div class="chat-compose">
+                <textarea @bind="ChatText"></textarea>
+                <div class="emoji-row">
+                    <button type="button" class="secondary-button small-button" @onclick="() => AddEmoji(char.ConvertFromUtf32(128077))">&#128077;</button>
+                    <button type="button" class="secondary-button small-button" @onclick="() => AddEmoji(char.ConvertFromUtf32(128522))">&#128522;</button>
+                    <button type="button" class="secondary-button small-button" @onclick='() => AddEmoji(":)")'>:)</button>
                 </div>
-                <div>
-                    <span>Patient</span>
-                    <strong>@JoinResult.Session.PatientName</strong>
-                    <span>@(JoinResult.PatientIsOnline ? "Online" : "Waiting")</span>
-                </div>
-                <div>
-                    <span>Doctor</span>
-                    <strong>@JoinResult.Session.DoctorName</strong>
-                    <span>@(JoinResult.DoctorIsOnline ? "Online" : "Waiting")</span>
-                </div>
-                <div>
-                    <span>Agora UID</span>
-                    <strong>@JoinResult.Uid</strong>
-                    <span>@JoinResult.ExpiresAt.LocalDateTime.ToString("HH:mm")</span>
-                </div>
+                <InputFile OnChange="UploadAttachmentAsync" />
+                <button class="primary-button" type="button" @onclick="SendChatAsync" disabled="@IsBusy">Send</button>
             </div>
         }
     </aside>
@@ -80,7 +132,15 @@
 
     private HubConnection? HubConnection { get; set; }
 
+    private HubConnection? ChatHubConnection { get; set; }
+
+    private List<ChatMessageModel> ChatMessages { get; set; } = [];
+
     private string ParticipantType { get; set; } = "Patient";
+
+    private string ActiveTab { get; set; } = "Session";
+
+    private string ChatText { get; set; } = string.Empty;
 
     private bool IsBusy { get; set; }
 
@@ -98,6 +158,10 @@
 
     private string ConnectionBadge => HubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
 
+    private string ChatConnectionLabel => ChatHubConnection?.State == HubConnectionState.Connected ? "Live" : "Offline";
+
+    private string ChatConnectionBadge => ChatHubConnection?.State == HubConnectionState.Connected ? "status-pill green" : "status-pill amber";
+
     private string RemoteLabel => ParticipantType == "Doctor" ? "Patient Feed" : "Doctor Feed";
 
     private string MuteLabel => IsMuted ? "Unmute" : "Mute";
@@ -108,8 +172,10 @@
     {
         ParticipantType = GetRoleFromQuery();
         await EnsureHubAsync();
+        await EnsureChatHubAsync();
         await ReloadSessionAsync();
         await JoinAsync();
+        await LoadChatAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -136,6 +202,10 @@
             {
                 await HubConnection.InvokeAsync("JoinSession", Session.Id);
             }
+            if (ChatHubConnection?.State == HubConnectionState.Connected)
+            {
+                await ChatHubConnection.InvokeAsync("JoinSession", Session.Id);
+            }
 
             SetStatus("Session loaded.", "tone-green");
             return;
@@ -156,6 +226,7 @@
         {
             JoinResult = result.Data;
             Session = result.Data.Session;
+            await MarkChatReadAsync();
             SetStatus($"{ParticipantType} joined video session.", "tone-green");
             return;
         }
@@ -179,6 +250,139 @@
         await HubConnection.StartAsync();
     }
 
+    private async Task EnsureChatHubAsync()
+    {
+        ChatHubConnection = new HubConnectionBuilder()
+            .WithUrl(ApiEndpoints.ConsultationChatHubUrl)
+            .WithAutomaticReconnect()
+            .Build();
+
+        ChatHubConnection.On<ChatMessageModel>("MessageReceived", message =>
+        {
+            UpsertChatMessage(message);
+            _ = InvokeAsync(async () =>
+            {
+                await MarkChatReadAsync();
+                StateHasChanged();
+            });
+        });
+
+        ChatHubConnection.On<IReadOnlyList<ChatMessageModel>>("ReadReceiptsUpdated", messages =>
+        {
+            foreach (var message in messages)
+            {
+                UpsertChatMessage(message);
+            }
+
+            _ = InvokeAsync(StateHasChanged);
+        });
+
+        await ChatHubConnection.StartAsync();
+        await ChatHubConnection.InvokeAsync("JoinSession", SessionId);
+    }
+
+    private async Task LoadChatAsync()
+    {
+        var result = await ApiClient.GetAsync<IReadOnlyList<ChatMessageModel>>($"api/v1/consultations/sessions/{SessionId}/chat/messages");
+        if (result?.Success == true && result.Data is not null)
+        {
+            ChatMessages = result.Data.OrderBy(x => x.SentAt).ToList();
+            await MarkChatReadAsync();
+        }
+    }
+
+    private async Task SendChatAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ChatText))
+        {
+            SetStatus("Message is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<SendChatMessageModel, ChatMessageModel>(
+            $"api/v1/consultations/sessions/{SessionId}/chat/messages",
+            new SendChatMessageModel
+            {
+                ParticipantType = ParticipantType,
+                SenderDisplayName = SenderDisplayName,
+                MessageText = ChatText
+            });
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            UpsertChatMessage(result.Data);
+            ChatText = string.Empty;
+            SetStatus("Message sent.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Message failed.", "tone-amber");
+    }
+
+    private async Task UploadAttachmentAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        await using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        using var content = new MultipartFormDataContent();
+        using var streamContent = new StreamContent(stream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+        content.Add(new StringContent(ParticipantType), "participantType");
+        content.Add(new StringContent(SenderDisplayName), "senderDisplayName");
+        content.Add(streamContent, "file", file.Name);
+
+        IsBusy = true;
+        var result = await ApiClient.PostMultipartAsync<ChatMessageModel>(
+            $"api/v1/consultations/sessions/{SessionId}/chat/attachments",
+            content);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            UpsertChatMessage(result.Data);
+            SetStatus("Attachment uploaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Attachment upload failed.", "tone-amber");
+    }
+
+    private async Task MarkChatReadAsync()
+    {
+        var result = await ApiClient.PutAsync<MarkChatMessagesReadModel, IReadOnlyList<ChatMessageModel>>(
+            $"api/v1/consultations/sessions/{SessionId}/chat/read",
+            new MarkChatMessagesReadModel { ParticipantType = ParticipantType });
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            ChatMessages = result.Data.OrderBy(x => x.SentAt).ToList();
+        }
+    }
+
+    private async Task DownloadAttachmentAsync(ChatMessageModel message)
+    {
+        if (string.IsNullOrWhiteSpace(message.DownloadUrl))
+        {
+            SetStatus("Attachment is unavailable.", "tone-amber");
+            return;
+        }
+
+        var download = await ApiClient.DownloadFileAsync(message.DownloadUrl.TrimStart('/'));
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync(
+            "HealthCareMSMedia.downloadFile",
+            download.FileName,
+            download.ContentType,
+            Convert.ToBase64String(download.Content));
+        SetStatus("Attachment downloaded.", "tone-green");
+    }
+
     private void ToggleMute()
     {
         IsMuted = !IsMuted;
@@ -195,6 +399,47 @@
     {
         SetStatus("Screen share requested.", "tone-blue");
         return Task.CompletedTask;
+    }
+
+    private void AddEmoji(string value)
+    {
+        ChatText = $"{ChatText}{value}";
+    }
+
+    private void UpsertChatMessage(ChatMessageModel message)
+    {
+        var index = ChatMessages.FindIndex(x => x.Id == message.Id);
+        if (index >= 0)
+        {
+            ChatMessages[index] = message;
+        }
+        else
+        {
+            ChatMessages.Add(message);
+        }
+
+        ChatMessages = ChatMessages.OrderBy(x => x.SentAt).ToList();
+    }
+
+    private string SenderDisplayName => ParticipantType == "Doctor"
+        ? Session?.DoctorName ?? "Doctor"
+        : Session?.PatientName ?? "Patient";
+
+    private string ChatMessageClass(ChatMessageModel message)
+    {
+        return message.SenderType == ParticipantType ? "chat-message mine" : "chat-message theirs";
+    }
+
+    private string ReadReceiptLabel(ChatMessageModel message)
+    {
+        return ParticipantType == "Patient"
+            ? message.DoctorReadAt.HasValue ? "Read by doctor" : "Sent"
+            : message.PatientReadAt.HasValue ? "Read by patient" : "Sent";
+    }
+
+    private string TabClass(string tab)
+    {
+        return ActiveTab == tab ? "tab-button active" : "tab-button";
     }
 
     private string GetRoleFromQuery()
@@ -234,6 +479,10 @@
         if (HubConnection is not null)
         {
             await HubConnection.DisposeAsync();
+        }
+        if (ChatHubConnection is not null)
+        {
+            await ChatHubConnection.DisposeAsync();
         }
     }
 

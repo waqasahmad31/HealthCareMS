@@ -51,6 +51,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<ConsultationSession> ConsultationSessions => Set<ConsultationSession>();
 
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+
     public DbSet<Notification> Notifications => Set<Notification>();
 
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();

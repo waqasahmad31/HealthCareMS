@@ -47,6 +47,8 @@ public static class DependencyInjection
             configuration.GetSection(TwilioOptions.SectionName).Bind(options));
         services.Configure<ConsultationSessionOptions>(options =>
             configuration.GetSection(ConsultationSessionOptions.SectionName).Bind(options));
+        services.Configure<ChatFileStorageOptions>(options =>
+            configuration.GetSection(ChatFileStorageOptions.SectionName).Bind(options));
 
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<HealthCareDbContext>());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -60,6 +62,8 @@ public static class DependencyInjection
         services.AddScoped<IAdminOperationsService, AdminOperationsService>();
         services.AddScoped<IConsultationService, ConsultationService>();
         services.AddScoped<IConsultationSessionService, ConsultationSessionService>();
+        services.AddScoped<IChatFileStorage, LocalChatFileStorage>();
+        services.AddScoped<IConsultationChatService, ConsultationChatService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IPortalService, PortalService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();

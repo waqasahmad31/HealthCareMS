@@ -59,6 +59,39 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         return await response.Content.ReadFromJsonAsync<ApiResponse<TResponse>>(cancellationToken);
     }
 
+    public async Task<ApiResponse<T>?> PostMultipartAsync<T>(
+        string url,
+        MultipartFormDataContent content,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = content
+        };
+        await AddAuthorizationAsync(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+    }
+
+    public async Task<FileDownloadResult> DownloadFileAsync(string url, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        await AddAuthorizationAsync(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return new FileDownloadResult(false, string.Empty, string.Empty, [], "Download failed.");
+        }
+
+        var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+            ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+            ?? "Attachment";
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        return new FileDownloadResult(true, fileName, contentType, bytes, null);
+    }
+
     private async Task AddAuthorizationAsync(HttpRequestMessage request)
     {
         var token = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.AccessToken");
@@ -68,3 +101,10 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         }
     }
 }
+
+public sealed record FileDownloadResult(
+    bool Success,
+    string FileName,
+    string ContentType,
+    byte[] Content,
+    string? ErrorMessage);

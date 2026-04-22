@@ -45,6 +45,7 @@ builder.Services.AddHangfire(configuration => configuration.UseMemoryStorage());
 builder.Services.AddHangfireServer();
 builder.Services.AddScoped<IInAppNotificationPublisher, SignalRInAppNotificationPublisher>();
 builder.Services.AddScoped<IConsultationSessionNotifier, SignalRConsultationSessionNotifier>();
+builder.Services.AddScoped<IConsultationChatNotifier, SignalRConsultationChatNotifier>();
 builder.Services.AddSingleton<IReminderScheduler, HangfireReminderScheduler>();
 builder.Services.AddCors(options =>
 {
@@ -105,5 +106,6 @@ app.MapControllers();
 app.MapHub<QueueHub>("/hubs/queue");
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ConsultationHub>("/hubs/consultations");
+app.MapHub<ConsultationChatHub>("/hubs/consultation-chat");
 
 await app.RunAsync();
