@@ -157,3 +157,85 @@ public sealed record PharmacyStockDashboardModel(
     IReadOnlyList<MedicineModel> LowStockMedicines,
     IReadOnlyList<StockAlertModel> ExpiryAlerts,
     IReadOnlyList<StockAlertModel> OpenAlerts);
+
+public sealed record DispensePrescriptionLookupModel(
+    Guid PrescriptionId,
+    string PrescriptionNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid DoctorId,
+    string DoctorName,
+    string? DoctorPmdcRegistrationNumber,
+    bool DoctorLicenseValid,
+    string Status,
+    DateTimeOffset IssuedAt,
+    DateTimeOffset ValidUntil,
+    bool VerificationCodeMatched,
+    bool IsDispensable,
+    bool AlreadyDispensed,
+    IReadOnlyList<string> ValidationMessages,
+    IReadOnlyList<DispensePrescriptionLookupItemModel> Items);
+
+public sealed record DispensePrescriptionLookupItemModel(
+    Guid PrescriptionItemId,
+    string MedicineName,
+    string? GenericName,
+    string? Strength,
+    string Dosage,
+    string Frequency,
+    short DurationDays,
+    decimal QuantityPrescribed,
+    IReadOnlyList<MedicineAvailabilityModel> SuggestedMedicines);
+
+public sealed record MedicineAvailabilityModel(
+    Guid MedicineId,
+    string MedicineName,
+    string? Strength,
+    decimal UnitPrice,
+    int StockOnHand,
+    bool IsAvailable);
+
+public sealed record DispensePrescriptionItemFormModel(
+    Guid PrescriptionItemId,
+    Guid MedicineId,
+    int QuantityToDispense);
+
+public sealed record DispensePrescriptionFormModel(
+    string VerificationCode,
+    IReadOnlyList<DispensePrescriptionItemFormModel> Items,
+    string? Notes);
+
+public sealed record PrescriptionDispenseBatchModel(
+    Guid StockBatchId,
+    string BatchNumber,
+    DateOnly ExpiryDate,
+    int QuantityDispensed);
+
+public sealed record PrescriptionDispenseItemModel(
+    Guid Id,
+    Guid PrescriptionItemId,
+    Guid MedicineId,
+    string PrescribedMedicineName,
+    string DispensedMedicineName,
+    decimal QuantityPrescribed,
+    int QuantityDispensed,
+    decimal UnitPrice,
+    decimal LineTotal,
+    IReadOnlyList<PrescriptionDispenseBatchModel> Batches);
+
+public sealed record PrescriptionDispenseModel(
+    Guid Id,
+    string DispenseNumber,
+    string ReceiptNumber,
+    Guid PrescriptionId,
+    string PrescriptionNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid DoctorId,
+    string DoctorName,
+    string Status,
+    DateTimeOffset DispensedAt,
+    decimal SubTotal,
+    decimal TotalAmount,
+    string? Notes,
+    IReadOnlyList<PrescriptionDispenseItemModel> Items);

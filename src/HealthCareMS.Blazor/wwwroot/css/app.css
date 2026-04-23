@@ -939,6 +939,52 @@ a, .btn-link {
     border-color: #0ea5e9;
 }
 
+.dispense-row {
+    grid-template-columns: minmax(0, 0.9fr) minmax(10rem, 0.75fr) minmax(5rem, 0.25fr) minmax(6rem, 0.35fr);
+}
+
+.dispense-summary,
+.selected-tests,
+.alert-list {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0.75rem 0;
+}
+
+.selected-tests {
+    grid-template-columns: repeat(auto-fit, minmax(4.5rem, max-content));
+}
+
+.selected-tests span,
+.alert-list span {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 800;
+    padding: 0.35rem 0.5rem;
+}
+
+.alert-list span {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #9a3412;
+}
+
+.dispense-history-row,
+.lab-panel-row {
+    grid-template-columns: minmax(8rem, 0.45fr) minmax(0, 1fr) minmax(5rem, 0.25fr) auto;
+}
+
+.lab-test-row {
+    grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.45fr) minmax(5rem, 0.25fr) auto;
+}
+
+.lab-test-row.selected {
+    background: #f0fdf4;
+    border-color: #22c55e;
+}
+
 .rating-summary {
     display: grid;
     gap: 0.2rem;
@@ -1228,6 +1274,10 @@ code {
     .stock-batch-row,
     .fifo-row,
     .stock-alert-row,
+    .dispense-row,
+    .dispense-history-row,
+    .lab-test-row,
+    .lab-panel-row,
     .review-row,
     .notification-filter,
     .notification-item,

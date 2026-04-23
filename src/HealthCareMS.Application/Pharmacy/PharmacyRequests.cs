@@ -47,3 +47,13 @@ public sealed record AdjustStockBatchRequest(
 public sealed record FifoDispenseRequest(
     int QuantityRequired,
     string? Reason);
+
+public sealed record DispensePrescriptionItemRequest(
+    Guid PrescriptionItemId,
+    Guid MedicineId,
+    int QuantityToDispense);
+
+public sealed record DispensePrescriptionRequest(
+    string VerificationCode,
+    IReadOnlyList<DispensePrescriptionItemRequest> Items,
+    string? Notes);

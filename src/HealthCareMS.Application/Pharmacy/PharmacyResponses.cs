@@ -92,3 +92,80 @@ public sealed record PharmacyStockDashboardResponse(
     IReadOnlyList<MedicineResponse> LowStockMedicines,
     IReadOnlyList<StockAlertResponse> ExpiryAlerts,
     IReadOnlyList<StockAlertResponse> OpenAlerts);
+
+public sealed record DispensePrescriptionLookupResponse(
+    Guid PrescriptionId,
+    string PrescriptionNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid DoctorId,
+    string DoctorName,
+    string? DoctorPmdcRegistrationNumber,
+    bool DoctorLicenseValid,
+    string Status,
+    DateTimeOffset IssuedAt,
+    DateTimeOffset ValidUntil,
+    bool VerificationCodeMatched,
+    bool IsDispensable,
+    bool AlreadyDispensed,
+    IReadOnlyList<string> ValidationMessages,
+    IReadOnlyList<DispensePrescriptionLookupItemResponse> Items);
+
+public sealed record DispensePrescriptionLookupItemResponse(
+    Guid PrescriptionItemId,
+    string MedicineName,
+    string? GenericName,
+    string? Strength,
+    string Dosage,
+    string Frequency,
+    short DurationDays,
+    decimal QuantityPrescribed,
+    IReadOnlyList<MedicineAvailabilityResponse> SuggestedMedicines);
+
+public sealed record MedicineAvailabilityResponse(
+    Guid MedicineId,
+    string MedicineName,
+    string? Strength,
+    decimal UnitPrice,
+    int StockOnHand,
+    bool IsAvailable);
+
+public sealed record PrescriptionDispenseBatchResponse(
+    Guid StockBatchId,
+    string BatchNumber,
+    DateOnly ExpiryDate,
+    int QuantityDispensed);
+
+public sealed record PrescriptionDispenseItemResponse(
+    Guid Id,
+    Guid PrescriptionItemId,
+    Guid MedicineId,
+    string PrescribedMedicineName,
+    string DispensedMedicineName,
+    decimal QuantityPrescribed,
+    int QuantityDispensed,
+    decimal UnitPrice,
+    decimal LineTotal,
+    IReadOnlyList<PrescriptionDispenseBatchResponse> Batches);
+
+public sealed record PrescriptionDispenseResponse(
+    Guid Id,
+    string DispenseNumber,
+    string ReceiptNumber,
+    Guid PrescriptionId,
+    string PrescriptionNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid DoctorId,
+    string DoctorName,
+    string Status,
+    DateTimeOffset DispensedAt,
+    decimal SubTotal,
+    decimal TotalAmount,
+    string? Notes,
+    IReadOnlyList<PrescriptionDispenseItemResponse> Items);
+
+public sealed record DispenseReceiptPdfResponse(
+    byte[] Content,
+    string FileName,
+    string ContentType);

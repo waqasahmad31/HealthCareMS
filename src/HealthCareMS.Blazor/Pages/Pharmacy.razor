@@ -2,7 +2,9 @@
 @using System.Net.Http.Headers
 @using HealthCareMS.Blazor.Models
 @using HealthCareMS.Blazor.Services
+@using Microsoft.JSInterop
 @inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
 
 <PageTitle>Pharmacy Catalogue</PageTitle>
 
@@ -191,6 +193,88 @@
     </article>
 </section>
 
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Prescription Dispense</h2>
+            <span class="status-pill green">@DispenseLookup?.PrescriptionNumber</span>
+        </div>
+        <div class="entity-form">
+            <label>PrescriptionId<InputText @bind-Value="DispensePrescriptionIdText" /></label>
+            <label>VerificationCode<InputText @bind-Value="DispenseVerificationCode" /></label>
+            <label>Notes<InputTextArea @bind-Value="DispenseNotes" /></label>
+            <div class="header-actions">
+                <button class="secondary-button" type="button" @onclick="FetchPrescriptionForDispenseAsync" disabled="@IsBusy">Scan / Fetch</button>
+                <button class="primary-button" type="button" @onclick="ConfirmPrescriptionDispenseAsync" disabled="@IsBusy">Confirm Dispense</button>
+            </div>
+        </div>
+
+        @if (DispenseLookup is not null)
+        {
+            <div class="dispense-summary">
+                <strong>@DispenseLookup.PatientName</strong>
+                <span>@DispenseLookup.DoctorName / @DispenseLookup.DoctorPmdcRegistrationNumber</span>
+                <span class="@(DispenseLookup.IsDispensable ? "tone-green" : "tone-amber")">@DispenseStatusLabel</span>
+            </div>
+
+            @if (DispenseLookup.ValidationMessages.Count > 0)
+            {
+                <div class="alert-list">
+                    @foreach (var message in DispenseLookup.ValidationMessages)
+                    {
+                        <span>@message</span>
+                    }
+                </div>
+            }
+
+            <div class="table-shell">
+                <div class="table-row dispense-row table-head">
+                    <span>Rx Item</span>
+                    <span>Medicine</span>
+                    <span>Qty</span>
+                    <span>Stock</span>
+                </div>
+                @foreach (var line in DispenseLines)
+                {
+                    <div class="table-row dispense-row">
+                        <span>@line.MedicineLabel</span>
+                        <select @bind="line.MedicineId">
+                            @foreach (var option in line.SuggestedMedicines)
+                            {
+                                <option value="@option.MedicineId">@option.MedicineName (@option.StockOnHand)</option>
+                            }
+                        </select>
+                        <InputNumber @bind-Value="line.QuantityToDispense" />
+                        <span>@line.StockLabel</span>
+                    </div>
+                }
+            </div>
+        }
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Dispensing History</h2>
+            <span class="status-pill blue">@DispensingHistory.Count</span>
+        </div>
+        <div class="entity-form pharmacy-filter">
+            <label>Search<InputText @bind-Value="DispenseHistorySearch" /></label>
+            <button class="secondary-button" type="button" @onclick="LoadDispensingHistoryAsync" disabled="@IsBusy">Search</button>
+        </div>
+        <div class="table-shell dispense-history">
+            @foreach (var dispense in DispensingHistory)
+            {
+                <div class="table-row dispense-history-row">
+                    <span>@dispense.ReceiptNumber</span>
+                    <span>@dispense.PatientName</span>
+                    <span>@dispense.TotalAmount.ToString("0.00")</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => DownloadReceiptAsync(dispense.Id)">Receipt</button>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
 @if (StockDashboard?.OpenAlerts.Count > 0)
 {
     <section class="panel">
@@ -237,7 +321,21 @@
 
     private FifoBatchSelectionModel? FifoSelection { get; set; }
 
+    private DispensePrescriptionLookupModel? DispenseLookup { get; set; }
+
+    private List<DispenseLineForm> DispenseLines { get; } = [];
+
+    private IReadOnlyList<PrescriptionDispenseModel> DispensingHistory { get; set; } = [];
+
     private string Search { get; set; } = string.Empty;
+
+    private string DispensePrescriptionIdText { get; set; } = string.Empty;
+
+    private string DispenseVerificationCode { get; set; } = string.Empty;
+
+    private string? DispenseNotes { get; set; }
+
+    private string DispenseHistorySearch { get; set; } = string.Empty;
 
     private string ManufacturedDateText { get; set; } = string.Empty;
 
@@ -249,10 +347,15 @@
 
     private string StatusClass { get; set; } = "tone-muted";
 
+    private string DispenseStatusLabel => DispenseLookup is null
+        ? string.Empty
+        : DispenseLookup.IsDispensable ? "Ready to dispense" : "Validation blocked";
+
     protected override async Task OnInitializedAsync()
     {
         await LoadStockDashboardAsync();
         await LoadMedicinesAsync();
+        await LoadDispensingHistoryAsync();
     }
 
     private async Task LoadStockDashboardAsync()
@@ -461,6 +564,110 @@
         SetStatus(result?.Error?.Message ?? "FIFO dispense failed.", "tone-amber");
     }
 
+    private async Task FetchPrescriptionForDispenseAsync()
+    {
+        if (!Guid.TryParse(DispensePrescriptionIdText, out var prescriptionId))
+        {
+            SetStatus("Enter a valid prescription id.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<DispensePrescriptionLookupModel>(
+            $"api/v1/pharmacy/dispense/prescriptions/{prescriptionId}?code={Uri.EscapeDataString(DispenseVerificationCode)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            DispenseLookup = result.Data;
+            DispenseLines.Clear();
+            foreach (var item in result.Data.Items)
+            {
+                var selected = item.SuggestedMedicines.FirstOrDefault(x => x.IsAvailable) ?? item.SuggestedMedicines.FirstOrDefault();
+                DispenseLines.Add(new DispenseLineForm
+                {
+                    PrescriptionItemId = item.PrescriptionItemId,
+                    MedicineLabel = $"{item.MedicineName} {item.Strength}".Trim(),
+                    QuantityToDispense = (int)Math.Ceiling(item.QuantityPrescribed),
+                    MedicineId = selected?.MedicineId ?? Guid.Empty,
+                    SuggestedMedicines = item.SuggestedMedicines
+                });
+            }
+
+            SetStatus(result.Data.IsDispensable ? "Prescription fetched and verified." : "Prescription fetched with validation warnings.", result.Data.IsDispensable ? "tone-green" : "tone-amber");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Prescription lookup failed.", "tone-amber");
+    }
+
+    private async Task ConfirmPrescriptionDispenseAsync()
+    {
+        if (!Guid.TryParse(DispensePrescriptionIdText, out var prescriptionId))
+        {
+            SetStatus("Enter a valid prescription id.", "tone-amber");
+            return;
+        }
+
+        if (DispenseLines.Count == 0 || DispenseLines.Any(x => x.MedicineId == Guid.Empty))
+        {
+            SetStatus("Fetch prescription and select medicines first.", "tone-amber");
+            return;
+        }
+
+        var request = new DispensePrescriptionFormModel(
+            DispenseVerificationCode,
+            DispenseLines
+                .Select(x => new DispensePrescriptionItemFormModel(x.PrescriptionItemId, x.MedicineId, x.QuantityToDispense))
+                .ToList(),
+            DispenseNotes);
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<DispensePrescriptionFormModel, PrescriptionDispenseModel>(
+            $"api/v1/pharmacy/dispense/prescriptions/{prescriptionId}",
+            request);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            await LoadMedicinesAsync();
+            await LoadDispensingHistoryAsync();
+            DispenseLookup = null;
+            DispenseLines.Clear();
+            SetStatus($"Prescription dispensed. Receipt {result.Data.ReceiptNumber}.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Prescription dispense failed.", "tone-amber");
+    }
+
+    private async Task LoadDispensingHistoryAsync()
+    {
+        var result = await ApiClient.GetAsync<IReadOnlyList<PrescriptionDispenseModel>>(
+            $"api/v1/pharmacy/dispense/history?search={Uri.EscapeDataString(DispenseHistorySearch)}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            DispensingHistory = result.Data;
+        }
+    }
+
+    private async Task DownloadReceiptAsync(Guid dispenseId)
+    {
+        var download = await ApiClient.DownloadFileAsync($"api/v1/pharmacy/dispense/{dispenseId}/receipt.pdf");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Receipt PDF download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync(
+            "HealthCareMSMedia.downloadFile",
+            download.FileName,
+            download.ContentType,
+            Convert.ToBase64String(download.Content));
+        SetStatus("Receipt PDF downloaded.", "tone-green");
+    }
+
     private async Task RunAlertScanAsync()
     {
         IsBusy = true;
@@ -501,5 +708,27 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private sealed class DispenseLineForm
+    {
+        public Guid PrescriptionItemId { get; set; }
+
+        public string MedicineLabel { get; set; } = string.Empty;
+
+        public Guid MedicineId { get; set; }
+
+        public int QuantityToDispense { get; set; }
+
+        public IReadOnlyList<MedicineAvailabilityModel> SuggestedMedicines { get; set; } = [];
+
+        public string StockLabel
+        {
+            get
+            {
+                var medicine = SuggestedMedicines.FirstOrDefault(x => x.MedicineId == MedicineId);
+                return medicine is null ? "No stock match" : $"{medicine.StockOnHand} on hand";
+            }
+        }
     }
 }

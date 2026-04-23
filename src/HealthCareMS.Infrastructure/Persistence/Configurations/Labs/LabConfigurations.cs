@@ -105,3 +105,53 @@ public sealed class LabBookingItemConfiguration : IEntityTypeConfiguration<LabBo
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public sealed class LabPanelConfiguration : IEntityTypeConfiguration<LabPanel>
+{
+    public void Configure(EntityTypeBuilder<LabPanel> builder)
+    {
+        builder.ToTable("LabPanels", DatabaseSchemas.Lab);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.PanelCode).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.PanelName).HasMaxLength(250).IsRequired();
+        builder.Property(x => x.Category).HasMaxLength(120).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(1000);
+        builder.Property(x => x.Price).HasPrecision(12, 2);
+
+        builder.HasIndex(x => x.TenantId);
+        builder.HasIndex(x => x.PanelCode).IsUnique();
+        builder.HasIndex(x => new { x.PanelName, x.Category });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Tenant)
+            .WithMany()
+            .HasForeignKey(x => x.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class LabPanelItemConfiguration : IEntityTypeConfiguration<LabPanelItem>
+{
+    public void Configure(EntityTypeBuilder<LabPanelItem> builder)
+    {
+        builder.ToTable("LabPanelItems", DatabaseSchemas.Lab);
+        builder.HasKey(x => x.Id);
+
+        builder.HasIndex(x => new { x.LabPanelId, x.LabTestId }).IsUnique();
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.LabPanel)
+            .WithMany(x => x.Items)
+            .HasForeignKey(x => x.LabPanelId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.LabTest)
+            .WithMany()
+            .HasForeignKey(x => x.LabTestId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}

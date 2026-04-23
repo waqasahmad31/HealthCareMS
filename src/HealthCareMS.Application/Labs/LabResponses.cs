@@ -42,3 +42,18 @@ public sealed record LabBookingItemResponse(
     string TestName,
     string Category,
     decimal Price);
+
+public sealed record LabTestImportResponse(
+    int ImportedCount,
+    IReadOnlyList<LabTestResponse> Tests);
+
+public sealed record LabPanelResponse(
+    Guid Id,
+    Guid? TenantId,
+    string PanelCode,
+    string PanelName,
+    string Category,
+    string? Description,
+    decimal Price,
+    bool IsActive,
+    IReadOnlyList<LabTestResponse> Tests);

@@ -71,6 +71,10 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<LabBookingItem> LabBookingItems => Set<LabBookingItem>();
 
+    public DbSet<LabPanel> LabPanels => Set<LabPanel>();
+
+    public DbSet<LabPanelItem> LabPanelItems => Set<LabPanelItem>();
+
     public DbSet<Medicine> Medicines => Set<Medicine>();
 
     public DbSet<StockBatch> StockBatches => Set<StockBatch>();
@@ -80,6 +84,12 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
     public DbSet<StockAdjustment> StockAdjustments => Set<StockAdjustment>();
 
     public DbSet<StockAlert> StockAlerts => Set<StockAlert>();
+
+    public DbSet<PrescriptionDispense> PrescriptionDispenses => Set<PrescriptionDispense>();
+
+    public DbSet<PrescriptionDispenseItem> PrescriptionDispenseItems => Set<PrescriptionDispenseItem>();
+
+    public DbSet<PrescriptionDispenseBatch> PrescriptionDispenseBatches => Set<PrescriptionDispenseBatch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

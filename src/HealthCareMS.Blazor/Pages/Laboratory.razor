@@ -1,0 +1,245 @@
+@page "/laboratory"
+@using System.Net.Http.Headers
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Laboratory Catalogue</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Lab Admin</p>
+        <h1>Test Catalogue</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadTestsAsync" disabled="@IsBusy">Refresh</button>
+        <button class="primary-button" type="button" @onclick="CreatePanelAsync" disabled="@IsBusy">Create Panel</button>
+    </div>
+</section>
+
+<section class="stats-grid portal-stats">
+    <article class="metric-card">
+        <span class="metric-label">Tests</span>
+        <strong>@LabTests.Count</strong>
+        <span class="tone-green">catalogue</span>
+    </article>
+    <article class="metric-card">
+        <span class="metric-label">Panels</span>
+        <strong>@LabPanels.Count</strong>
+        <span class="tone-blue">grouped</span>
+    </article>
+    <article class="metric-card">
+        <span class="metric-label">Selected</span>
+        <strong>@SelectedLabTestIds.Count</strong>
+        <span class="tone-amber">builder</span>
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Browse Tests</h2>
+            <span class="status-pill blue">@LabTests.Count</span>
+        </div>
+        <div class="entity-form pharmacy-filter">
+            <label>Search<InputText @bind-Value="Search" /></label>
+            <button class="secondary-button" type="button" @onclick="LoadTestsAsync" disabled="@IsBusy">Search</button>
+        </div>
+        <div class="table-shell lab-test-list">
+            <div class="table-row lab-test-row table-head">
+                <span>Test</span>
+                <span>Category</span>
+                <span>Price</span>
+                <span></span>
+            </div>
+            @foreach (var test in LabTests)
+            {
+                <div class="@LabTestRowClass(test)">
+                    <span>@test.TestName (@test.TestCode)</span>
+                    <span>@test.Category</span>
+                    <span>@test.Price.ToString("0.00")</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => ToggleTest(test)">@SelectionLabel(test)</button>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Panel Builder</h2>
+            <span class="status-pill green">@SelectedLabTestIds.Count</span>
+        </div>
+        <EditForm Model="PanelForm" class="entity-form">
+            <label>PanelCode<InputText @bind-Value="PanelForm.PanelCode" /></label>
+            <label>PanelName<InputText @bind-Value="PanelForm.PanelName" /></label>
+            <label>Category<InputText @bind-Value="PanelForm.Category" /></label>
+            <label>Price<InputNumber @bind-Value="PanelForm.Price" /></label>
+            <label>Description<InputTextArea @bind-Value="PanelForm.Description" /></label>
+        </EditForm>
+        <div class="selected-tests">
+            @foreach (var test in SelectedTests)
+            {
+                <span>@test.TestCode</span>
+            }
+        </div>
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>CSV Import</h2>
+            <span class="status-pill amber">200+</span>
+        </div>
+        <div class="entity-form">
+            <InputFile OnChange="ImportCsvAsync" />
+            <p class="tone-muted">Columns: TestCode, TestName, Category, SampleType, TurnaroundHours, Price, IsHomeCollectionAvailable, FastingHours, PreparationInstructions, HomeCollectionExtra</p>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Panels</h2>
+            <span class="status-pill blue">@LabPanels.Count</span>
+        </div>
+        <div class="table-shell">
+            @foreach (var panel in LabPanels)
+            {
+                <div class="table-row lab-panel-row">
+                    <span>@panel.PanelName (@panel.PanelCode)</span>
+                    <span>@panel.Category</span>
+                    <span>@panel.Tests.Count tests</span>
+                    <span>@panel.Price.ToString("0.00")</span>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private IReadOnlyList<LabTestModel> LabTests { get; set; } = [];
+
+    private IReadOnlyList<LabPanelModel> LabPanels { get; set; } = [];
+
+    private HashSet<Guid> SelectedLabTestIds { get; } = [];
+
+    private LabPanelFormModel PanelForm { get; set; } = new();
+
+    private string Search { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private IEnumerable<LabTestModel> SelectedTests => LabTests.Where(x => SelectedLabTestIds.Contains(x.Id));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTestsAsync();
+        await LoadPanelsAsync();
+    }
+
+    private async Task LoadTestsAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<LabTestModel>>($"api/v1/lab/tests?search={Uri.EscapeDataString(Search)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            LabTests = result.Data;
+            SetStatus("Lab tests loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Lab catalogue unavailable.", "tone-amber");
+    }
+
+    private async Task LoadPanelsAsync()
+    {
+        var result = await ApiClient.GetAsync<IReadOnlyList<LabPanelModel>>("api/v1/lab/panels");
+        if (result?.Success == true && result.Data is not null)
+        {
+            LabPanels = result.Data;
+        }
+    }
+
+    private async Task ImportCsvAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        await using var stream = file.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+        using var content = new MultipartFormDataContent();
+        using var streamContent = new StreamContent(stream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+        content.Add(streamContent, "file", file.Name);
+
+        IsBusy = true;
+        var result = await ApiClient.PostMultipartAsync<LabTestImportModel>("api/v1/lab/tests/import", content);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            await LoadTestsAsync();
+            SetStatus($"{result.Data.ImportedCount} lab tests imported.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Lab CSV import failed.", "tone-amber");
+    }
+
+    private async Task CreatePanelAsync()
+    {
+        if (SelectedLabTestIds.Count == 0)
+        {
+            SetStatus("Select panel tests first.", "tone-amber");
+            return;
+        }
+
+        PanelForm.LabTestIds = SelectedLabTestIds.ToList();
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<LabPanelFormModel, LabPanelModel>("api/v1/lab/panels", PanelForm);
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            SelectedLabTestIds.Clear();
+            PanelForm = new LabPanelFormModel();
+            await LoadPanelsAsync();
+            SetStatus("Lab panel created.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Lab panel creation failed.", "tone-amber");
+    }
+
+    private void ToggleTest(LabTestModel test)
+    {
+        if (!SelectedLabTestIds.Add(test.Id))
+        {
+            SelectedLabTestIds.Remove(test.Id);
+        }
+    }
+
+    private string LabTestRowClass(LabTestModel test)
+    {
+        return SelectedLabTestIds.Contains(test.Id) ? "table-row lab-test-row selected" : "table-row lab-test-row";
+    }
+
+    private string SelectionLabel(LabTestModel test)
+    {
+        return SelectedLabTestIds.Contains(test.Id) ? "Remove" : "Add";
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

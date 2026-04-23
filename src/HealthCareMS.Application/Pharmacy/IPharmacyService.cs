@@ -46,4 +46,22 @@ public interface IPharmacyService
         CancellationToken cancellationToken);
 
     Task<Result<IReadOnlyList<StockAlertResponse>>> RunStockAlertScanAsync(CancellationToken cancellationToken);
+
+    Task<Result<DispensePrescriptionLookupResponse>> GetPrescriptionForDispensingAsync(
+        Guid prescriptionId,
+        string verificationCode,
+        CancellationToken cancellationToken);
+
+    Task<Result<PrescriptionDispenseResponse>> DispensePrescriptionAsync(
+        Guid prescriptionId,
+        DispensePrescriptionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<PrescriptionDispenseResponse>>> GetDispensingHistoryAsync(
+        string? search,
+        CancellationToken cancellationToken);
+
+    Task<Result<DispenseReceiptPdfResponse>> GenerateDispenseReceiptPdfAsync(
+        Guid dispenseId,
+        CancellationToken cancellationToken);
 }

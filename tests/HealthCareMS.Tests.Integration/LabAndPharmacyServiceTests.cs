@@ -104,6 +104,119 @@ public sealed class LabAndPharmacyServiceTests
         Assert.Contains(search, x => x.BrandName == "Brufen" && x.Barcode == "CSV-BRUFEN-400");
     }
 
+    [Fact]
+    public async Task PharmacyService_ShouldDispensePrescriptionWithReceiptHistoryAndFifoStock()
+    {
+        await using var dbContext = CreateDbContext();
+        var appointment = await SeedAppointmentAsync(dbContext);
+        var consultationService = new ConsultationService(dbContext, new QuestPdfPrescriptionDocumentService());
+        var pharmacyService = new PharmacyService(dbContext);
+
+        var complete = await consultationService.CompleteAsync(
+            appointment.Id,
+            new CompleteConsultationRequest(
+                "Acute fever",
+                "R50.9",
+                "Dispense prescribed antipyretic.",
+                null,
+                [new PrescriptionItemRequest("Panadol", "Paracetamol", "500mg", "Oral", "1 tablet", "QID", 3, 12, "After meals", true)]),
+            CancellationToken.None);
+        var medicine = await pharmacyService.CreateMedicineAsync(
+            new CreateMedicineRequest(
+                null,
+                "Paracetamol",
+                "Panadol",
+                "Tablet",
+                "500mg",
+                $"DRAP-DISP-{Guid.NewGuid():N}",
+                "GSK Pakistan",
+                25m,
+                12m,
+                false,
+                10,
+                null),
+            CancellationToken.None);
+        var firstBatch = await pharmacyService.CreateStockBatchAsync(
+            medicine.Value.Id,
+            new CreateStockBatchRequest(null, null, "DSP-FIFO-001", null, DateOnly.FromDateTime(DateTime.UtcNow.Date.AddYears(1)), 5, 12m),
+            CancellationToken.None);
+        var secondBatch = await pharmacyService.CreateStockBatchAsync(
+            medicine.Value.Id,
+            new CreateStockBatchRequest(null, null, "DSP-FIFO-002", null, DateOnly.FromDateTime(DateTime.UtcNow.Date.AddYears(2)), 20, 12m),
+            CancellationToken.None);
+
+        var trackedFirst = await dbContext.StockBatches.SingleAsync(x => x.Id == firstBatch.Value.Id);
+        var trackedSecond = await dbContext.StockBatches.SingleAsync(x => x.Id == secondBatch.Value.Id);
+        trackedFirst.ReceivedAt = DateTimeOffset.UtcNow.AddDays(-3);
+        trackedSecond.ReceivedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        await dbContext.SaveChangesAsync();
+
+        var prescription = complete.Value.Prescription!;
+        var lookup = await pharmacyService.GetPrescriptionForDispensingAsync(
+            prescription.Id,
+            prescription.VerificationCode,
+            CancellationToken.None);
+        var dispense = await pharmacyService.DispensePrescriptionAsync(
+            prescription.Id,
+            new DispensePrescriptionRequest(
+                prescription.VerificationCode,
+                [new DispensePrescriptionItemRequest(prescription.Items.Single().Id, medicine.Value.Id, 12)],
+                "S21 receipt verification"),
+            CancellationToken.None);
+        var history = await pharmacyService.GetDispensingHistoryAsync("Panadol", CancellationToken.None);
+        var receipt = await pharmacyService.GenerateDispenseReceiptPdfAsync(dispense.Value.Id, CancellationToken.None);
+        var batches = await dbContext.StockBatches.OrderBy(x => x.BatchNumber).ToListAsync();
+
+        Assert.True(complete.IsSuccess);
+        Assert.True(lookup.IsSuccess);
+        Assert.True(lookup.Value.IsDispensable);
+        Assert.True(dispense.IsSuccess);
+        Assert.StartsWith("DSP-", dispense.Value.DispenseNumber, StringComparison.Ordinal);
+        Assert.StartsWith("RCT-", dispense.Value.ReceiptNumber, StringComparison.Ordinal);
+        Assert.Equal(300m, dispense.Value.TotalAmount);
+        Assert.Equal(2, dispense.Value.Items.Single().Batches.Count);
+        Assert.True(history.IsSuccess);
+        Assert.Contains(history.Value, x => x.Id == dispense.Value.Id);
+        Assert.True(receipt.IsSuccess);
+        Assert.StartsWith("%PDF", Encoding.ASCII.GetString(receipt.Value.Content, 0, 4), StringComparison.Ordinal);
+        Assert.Equal(0, batches.Single(x => x.BatchNumber == "DSP-FIFO-001").QuantityOnHand);
+        Assert.Equal(13, batches.Single(x => x.BatchNumber == "DSP-FIFO-002").QuantityOnHand);
+    }
+
+    [Fact]
+    public async Task LabService_ShouldSeedLargeCatalogueImportCsvAndCreatePanel()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new LabService(dbContext);
+
+        var tests = await service.SearchTestsAsync(null, CancellationToken.None);
+        var csv = """
+            TestCode,TestName,Category,SampleType,TurnaroundHours,Price,IsHomeCollectionAvailable,FastingHours,PreparationInstructions,HomeCollectionExtra
+            VIT-D3,Vitamin D3 Level,Endocrinology,Blood,24,2400,true,,No special preparation.,300
+            """;
+        var imported = await service.ImportTestsCsvAsync(new ImportLabTestsCsvRequest(null, csv), CancellationToken.None);
+        var panel = await service.CreatePanelAsync(
+            new CreateLabPanelRequest(
+                null,
+                $"PNL-{Guid.NewGuid().ToString("N")[..8]}",
+                "Metabolic Wellness Panel",
+                "Wellness",
+                "Core metabolic screening bundle.",
+                null,
+                tests.Take(3).Select(x => x.Id).ToList()),
+            CancellationToken.None);
+        var panels = await service.GetPanelsAsync("wellness", CancellationToken.None);
+
+        Assert.True(tests.Count >= 100);
+        Assert.True(imported.IsSuccess);
+        Assert.Equal(1, imported.Value.ImportedCount);
+        Assert.True(panel.IsSuccess);
+        Assert.Equal(3, panel.Value.Tests.Count);
+        Assert.True(panel.Value.Price > 0);
+        Assert.True(panels.IsSuccess);
+        Assert.Contains(panels.Value, x => x.Id == panel.Value.Id);
+    }
+
     private static HealthCareDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<HealthCareDbContext>()

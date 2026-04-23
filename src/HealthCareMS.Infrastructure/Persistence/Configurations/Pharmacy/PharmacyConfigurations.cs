@@ -166,3 +166,114 @@ public sealed class StockAlertConfiguration : IEntityTypeConfiguration<StockAler
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public sealed class PrescriptionDispenseConfiguration : IEntityTypeConfiguration<PrescriptionDispense>
+{
+    public void Configure(EntityTypeBuilder<PrescriptionDispense> builder)
+    {
+        builder.ToTable("PrescriptionDispenses", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.DispenseNumber).HasMaxLength(35).IsRequired();
+        builder.Property(x => x.ReceiptNumber).HasMaxLength(35).IsRequired();
+        builder.Property(x => x.VerificationCode).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.SubTotal).HasPrecision(12, 2);
+        builder.Property(x => x.TotalAmount).HasPrecision(12, 2);
+        builder.Property(x => x.Notes).HasMaxLength(1000);
+
+        builder.HasIndex(x => x.TenantId);
+        builder.HasIndex(x => x.DispenseNumber).IsUnique();
+        builder.HasIndex(x => x.ReceiptNumber).IsUnique();
+        builder.HasIndex(x => new { x.PrescriptionId, x.Status });
+        builder.HasIndex(x => new { x.PatientId, x.DispensedAt });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Tenant)
+            .WithMany()
+            .HasForeignKey(x => x.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Prescription)
+            .WithMany()
+            .HasForeignKey(x => x.PrescriptionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Patient)
+            .WithMany()
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Doctor)
+            .WithMany()
+            .HasForeignKey(x => x.DoctorId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class PrescriptionDispenseItemConfiguration : IEntityTypeConfiguration<PrescriptionDispenseItem>
+{
+    public void Configure(EntityTypeBuilder<PrescriptionDispenseItem> builder)
+    {
+        builder.ToTable("PrescriptionDispenseItems", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.PrescribedMedicineName).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.DispensedMedicineName).HasMaxLength(300).IsRequired();
+        builder.Property(x => x.QuantityPrescribed).HasPrecision(10, 2);
+        builder.Property(x => x.UnitPrice).HasPrecision(12, 2);
+        builder.Property(x => x.LineTotal).HasPrecision(12, 2);
+
+        builder.HasIndex(x => new { x.PrescriptionDispenseId, x.PrescriptionItemId }).IsUnique();
+        builder.HasIndex(x => x.MedicineId);
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.PrescriptionDispense)
+            .WithMany(x => x.Items)
+            .HasForeignKey(x => x.PrescriptionDispenseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.PrescriptionItem)
+            .WithMany()
+            .HasForeignKey(x => x.PrescriptionItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Medicine)
+            .WithMany()
+            .HasForeignKey(x => x.MedicineId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class PrescriptionDispenseBatchConfiguration : IEntityTypeConfiguration<PrescriptionDispenseBatch>
+{
+    public void Configure(EntityTypeBuilder<PrescriptionDispenseBatch> builder)
+    {
+        builder.ToTable("PrescriptionDispenseBatches", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.BatchNumber).HasMaxLength(100).IsRequired();
+
+        builder.HasIndex(x => new { x.PrescriptionDispenseItemId, x.StockBatchId });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.PrescriptionDispenseItem)
+            .WithMany(x => x.Batches)
+            .HasForeignKey(x => x.PrescriptionDispenseItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.StockBatch)
+            .WithMany()
+            .HasForeignKey(x => x.StockBatchId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}

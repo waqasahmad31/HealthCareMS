@@ -55,7 +55,7 @@ public sealed class DatabaseSeeder(
             dbContext.Roles.Add(superAdminRole);
         }
 
-        var platformRoleNames = new[] { "Patient", "Doctor" };
+        var platformRoleNames = new[] { "Patient", "Doctor", "LabAdmin", "LabStaff" };
         foreach (var roleName in platformRoleNames)
         {
             var exists = await dbContext.Roles.AnyAsync(x => x.TenantId == null && x.Name == roleName, cancellationToken);
@@ -75,6 +75,51 @@ public sealed class DatabaseSeeder(
             {
                 RoleId = superAdminRole.Id,
                 PermissionId = permission.Id
+            });
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await EnsureRolePermissionsAsync(
+            "LabAdmin",
+            PermissionKeys.Lab.All,
+            allPermissions,
+            cancellationToken);
+        await EnsureRolePermissionsAsync(
+            "LabStaff",
+            [
+                PermissionKeys.Lab.TestsView,
+                PermissionKeys.Lab.BookingCreate,
+                PermissionKeys.Lab.SampleCollect,
+                PermissionKeys.Lab.ResultsEntry,
+                PermissionKeys.Lab.ResultsValidate,
+                PermissionKeys.Lab.ResultsRelease,
+                PermissionKeys.Lab.ReportsDownload
+            ],
+            allPermissions,
+            cancellationToken);
+    }
+
+    private async Task EnsureRolePermissionsAsync(
+        string roleName,
+        IReadOnlyCollection<string> permissionKeys,
+        IReadOnlyList<Permission> allPermissions,
+        CancellationToken cancellationToken)
+    {
+        var role = await dbContext.Roles
+            .Include(x => x.RolePermissions)
+            .SingleAsync(x => x.TenantId == null && x.Name == roleName, cancellationToken);
+        var permissionIds = allPermissions
+            .Where(x => permissionKeys.Contains(x.PermissionKey, StringComparer.OrdinalIgnoreCase))
+            .Select(x => x.Id)
+            .ToHashSet();
+        var existing = role.RolePermissions.Select(x => x.PermissionId).ToHashSet();
+
+        foreach (var permissionId in permissionIds.Where(x => !existing.Contains(x)))
+        {
+            role.RolePermissions.Add(new RolePermission
+            {
+                RoleId = role.Id,
+                PermissionId = permissionId
             });
         }
 

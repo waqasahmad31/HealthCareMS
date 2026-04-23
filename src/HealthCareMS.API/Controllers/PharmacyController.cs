@@ -112,6 +112,49 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
         return FromResult(result, StatusCodes.Status201Created);
     }
 
+    [HttpGet("dispense/prescriptions/{prescriptionId:guid}")]
+    [RequirePermission(PermissionKeys.Pharmacy.Dispense)]
+    public async Task<IActionResult> GetPrescriptionForDispensing(
+        Guid prescriptionId,
+        [FromQuery] string code,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetPrescriptionForDispensingAsync(prescriptionId, code, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPost("dispense/prescriptions/{prescriptionId:guid}")]
+    [RequirePermission(PermissionKeys.Pharmacy.Dispense)]
+    public async Task<IActionResult> DispensePrescription(
+        Guid prescriptionId,
+        DispensePrescriptionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.DispensePrescriptionAsync(prescriptionId, request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpGet("dispense/history")]
+    [RequirePermission(PermissionKeys.Pharmacy.OrdersView)]
+    public async Task<IActionResult> GetDispensingHistory([FromQuery] string? search, CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetDispensingHistoryAsync(search, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("dispense/{dispenseId:guid}/receipt.pdf")]
+    [RequirePermission(PermissionKeys.Pharmacy.OrdersView)]
+    public async Task<IActionResult> DownloadReceipt(Guid dispenseId, CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GenerateDispenseReceiptPdfAsync(dispenseId, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
+    }
+
     [HttpPost("medicines/import")]
     [RequirePermission(PermissionKeys.Pharmacy.MedicinesCreate)]
     [RequestSizeLimit(2 * 1024 * 1024)]

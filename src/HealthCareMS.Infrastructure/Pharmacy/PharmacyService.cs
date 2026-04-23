@@ -1,9 +1,13 @@
 using System.Globalization;
 using HealthCareMS.Application.Pharmacy;
+using HealthCareMS.Domain.Consultations;
 using HealthCareMS.Domain.Pharmacy;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace HealthCareMS.Infrastructure.Pharmacy;
 
@@ -479,6 +483,240 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         return Result<IReadOnlyList<StockAlertResponse>>.Success(created.Select(Map).ToList());
     }
 
+    public async Task<Result<DispensePrescriptionLookupResponse>> GetPrescriptionForDispensingAsync(
+        Guid prescriptionId,
+        string verificationCode,
+        CancellationToken cancellationToken)
+    {
+        var prescription = await PrescriptionQuery()
+            .SingleOrDefaultAsync(x => x.Id == prescriptionId, cancellationToken);
+        if (prescription is null)
+        {
+            return Result<DispensePrescriptionLookupResponse>.Failure(new Error("PRESCRIPTION_NOT_FOUND", "Prescription was not found."));
+        }
+
+        var alreadyDispensed = await dbContext.PrescriptionDispenses
+            .AnyAsync(x => x.PrescriptionId == prescriptionId && x.Status == PrescriptionDispenseStatus.Completed, cancellationToken);
+        var verificationMatched = string.Equals(prescription.VerificationCode, verificationCode, StringComparison.Ordinal);
+        var validationMessages = ValidatePrescriptionForDispense(prescription, verificationMatched, alreadyDispensed).ToList();
+        var items = new List<DispensePrescriptionLookupItemResponse>();
+
+        foreach (var item in prescription.Items.OrderBy(x => x.SortOrder))
+        {
+            var suggested = await FindSuggestedMedicinesAsync(item, cancellationToken);
+            if (!suggested.Any(x => x.IsAvailable))
+            {
+                validationMessages.Add($"No available stock found for {item.MedicineName}.");
+            }
+
+            items.Add(new DispensePrescriptionLookupItemResponse(
+                item.Id,
+                item.MedicineName,
+                item.GenericName,
+                item.Strength,
+                item.Dosage,
+                item.Frequency,
+                item.DurationDays,
+                item.Quantity,
+                suggested));
+        }
+
+        return Result<DispensePrescriptionLookupResponse>.Success(new DispensePrescriptionLookupResponse(
+            prescription.Id,
+            prescription.PrescriptionNumber,
+            prescription.PatientId,
+            $"{prescription.Patient.FirstName} {prescription.Patient.LastName}".Trim(),
+            prescription.DoctorId,
+            prescription.Doctor.User.FullName,
+            prescription.Doctor.PmdcRegistrationNumber,
+            IsDoctorLicenseValid(prescription),
+            prescription.Status.ToString(),
+            prescription.IssuedAt,
+            prescription.ValidUntil,
+            verificationMatched,
+            validationMessages.Count == 0,
+            alreadyDispensed,
+            validationMessages,
+            items));
+    }
+
+    public async Task<Result<PrescriptionDispenseResponse>> DispensePrescriptionAsync(
+        Guid prescriptionId,
+        DispensePrescriptionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var requestErrors = ValidateDispenseRequest(request);
+        if (requestErrors.Count > 0)
+        {
+            return Result<PrescriptionDispenseResponse>.Failure(Error.Validation(requestErrors));
+        }
+
+        var prescription = await PrescriptionQuery()
+            .SingleOrDefaultAsync(x => x.Id == prescriptionId, cancellationToken);
+        if (prescription is null)
+        {
+            return Result<PrescriptionDispenseResponse>.Failure(new Error("PRESCRIPTION_NOT_FOUND", "Prescription was not found."));
+        }
+
+        var alreadyDispensed = await dbContext.PrescriptionDispenses
+            .AnyAsync(x => x.PrescriptionId == prescriptionId && x.Status == PrescriptionDispenseStatus.Completed, cancellationToken);
+        var verificationMatched = string.Equals(prescription.VerificationCode, request.VerificationCode, StringComparison.Ordinal);
+        var validationMessages = ValidatePrescriptionForDispense(prescription, verificationMatched, alreadyDispensed).ToList();
+        if (validationMessages.Count > 0)
+        {
+            return Result<PrescriptionDispenseResponse>.Failure(new Error("PRESCRIPTION_DISPENSE_INVALID", string.Join(" ", validationMessages)));
+        }
+
+        var requestItemIds = request.Items.Select(x => x.PrescriptionItemId).ToArray();
+        if (requestItemIds.Length != requestItemIds.Distinct().Count())
+        {
+            return Result<PrescriptionDispenseResponse>.Failure(new Error("PRESCRIPTION_DISPENSE_DUPLICATE_ITEM", "Prescription dispense request contains duplicate items."));
+        }
+
+        var prescriptionItems = prescription.Items.ToDictionary(x => x.Id);
+        if (request.Items.Any(x => !prescriptionItems.ContainsKey(x.PrescriptionItemId)))
+        {
+            return Result<PrescriptionDispenseResponse>.Failure(new Error("PRESCRIPTION_ITEM_NOT_FOUND", "One or more prescription items were not found."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var dispenseNumber = await GenerateDispenseNumberAsync(now, cancellationToken);
+        var dispense = new PrescriptionDispense
+        {
+            TenantId = null,
+            DispenseNumber = dispenseNumber,
+            ReceiptNumber = dispenseNumber.Replace("DSP-", "RCT-", StringComparison.Ordinal),
+            PrescriptionId = prescription.Id,
+            Prescription = prescription,
+            PatientId = prescription.PatientId,
+            Patient = prescription.Patient,
+            DoctorId = prescription.DoctorId,
+            Doctor = prescription.Doctor,
+            VerificationCode = request.VerificationCode.Trim(),
+            Status = PrescriptionDispenseStatus.Completed,
+            DispensedAt = now,
+            Notes = Normalize(request.Notes)
+        };
+
+        var adjustments = new List<StockAdjustment>();
+        foreach (var requestedItem in request.Items)
+        {
+            var prescriptionItem = prescriptionItems[requestedItem.PrescriptionItemId];
+            var prescribedQuantity = (int)Math.Ceiling(prescriptionItem.Quantity);
+            if (requestedItem.QuantityToDispense > prescribedQuantity)
+            {
+                return Result<PrescriptionDispenseResponse>.Failure(new Error("PRESCRIPTION_DISPENSE_QUANTITY_INVALID", $"{prescriptionItem.MedicineName} dispense quantity exceeds prescription quantity."));
+            }
+
+            var medicine = await MedicineQuery()
+                .SingleOrDefaultAsync(x => x.Id == requestedItem.MedicineId && x.IsActive, cancellationToken);
+            if (medicine is null)
+            {
+                return Result<PrescriptionDispenseResponse>.Failure(new Error("MEDICINE_NOT_FOUND", "Dispensed medicine was not found."));
+            }
+
+            var selection = BuildFifoSelection(medicine, requestedItem.QuantityToDispense);
+            if (!selection.IsFulfillable)
+            {
+                return Result<PrescriptionDispenseResponse>.Failure(new Error("PRESCRIPTION_DISPENSE_STOCK_INSUFFICIENT", $"{medicine.BrandName} does not have enough stock for dispense."));
+            }
+
+            var lineTotal = requestedItem.QuantityToDispense * medicine.UnitPrice;
+            var dispenseItem = new PrescriptionDispenseItem
+            {
+                PrescriptionItemId = prescriptionItem.Id,
+                PrescriptionItem = prescriptionItem,
+                MedicineId = medicine.Id,
+                Medicine = medicine,
+                PrescribedMedicineName = prescriptionItem.MedicineName,
+                DispensedMedicineName = medicine.BrandName,
+                QuantityPrescribed = prescriptionItem.Quantity,
+                QuantityDispensed = requestedItem.QuantityToDispense,
+                UnitPrice = medicine.UnitPrice,
+                LineTotal = lineTotal
+            };
+
+            foreach (var selectedBatch in selection.Batches)
+            {
+                var batch = medicine.StockBatches.Single(x => x.Id == selectedBatch.StockBatchId);
+                var adjustment = ApplyAdjustment(
+                    batch,
+                    -selectedBatch.QuantitySelected,
+                    StockAdjustmentType.Dispense,
+                    $"Prescription {prescription.PrescriptionNumber} dispense {dispenseNumber}");
+                if (adjustment.IsFailure)
+                {
+                    return Result<PrescriptionDispenseResponse>.Failure(adjustment.Error);
+                }
+
+                adjustments.Add(adjustment.Value);
+                dispenseItem.Batches.Add(new PrescriptionDispenseBatch
+                {
+                    StockBatchId = batch.Id,
+                    StockBatch = batch,
+                    BatchNumber = batch.BatchNumber,
+                    QuantityDispensed = selectedBatch.QuantitySelected
+                });
+            }
+
+            dispense.Items.Add(dispenseItem);
+            dispense.SubTotal += lineTotal;
+        }
+
+        dispense.TotalAmount = dispense.SubTotal;
+        dbContext.PrescriptionDispenses.Add(dispense);
+        dbContext.StockAdjustments.AddRange(adjustments);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var saved = await DispenseQuery()
+            .SingleAsync(x => x.Id == dispense.Id, cancellationToken);
+        return Result<PrescriptionDispenseResponse>.Success(Map(saved));
+    }
+
+    public async Task<Result<IReadOnlyList<PrescriptionDispenseResponse>>> GetDispensingHistoryAsync(
+        string? search,
+        CancellationToken cancellationToken)
+    {
+        var query = DispenseQuery().AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLowerInvariant();
+            query = query.Where(x =>
+                x.DispenseNumber.ToLower().Contains(term)
+                || x.ReceiptNumber.ToLower().Contains(term)
+                || x.Prescription.PrescriptionNumber.ToLower().Contains(term)
+                || x.Patient.FirstName.ToLower().Contains(term)
+                || x.Patient.LastName.ToLower().Contains(term)
+                || x.Items.Any(item => item.DispensedMedicineName.ToLower().Contains(term)));
+        }
+
+        var dispenses = await query
+            .OrderByDescending(x => x.DispensedAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<PrescriptionDispenseResponse>>.Success(dispenses.Select(Map).ToList());
+    }
+
+    public async Task<Result<DispenseReceiptPdfResponse>> GenerateDispenseReceiptPdfAsync(
+        Guid dispenseId,
+        CancellationToken cancellationToken)
+    {
+        var dispense = await DispenseQuery()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == dispenseId, cancellationToken);
+        if (dispense is null)
+        {
+            return Result<DispenseReceiptPdfResponse>.Failure(new Error("DISPENSE_NOT_FOUND", "Dispense record was not found."));
+        }
+
+        var pdf = GenerateReceiptPdf(dispense);
+        return Result<DispenseReceiptPdfResponse>.Success(new DispenseReceiptPdfResponse(
+            pdf,
+            $"{dispense.ReceiptNumber}.pdf",
+            "application/pdf"));
+    }
+
     private IQueryable<Medicine> MedicineQuery()
     {
         return dbContext.Medicines
@@ -490,6 +728,33 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         return dbContext.StockAlerts
             .Include(x => x.Medicine)
             .Include(x => x.StockBatch);
+    }
+
+    private IQueryable<Prescription> PrescriptionQuery()
+    {
+        return dbContext.Prescriptions
+            .Include(x => x.Patient)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Doctor)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Items);
+    }
+
+    private IQueryable<PrescriptionDispense> DispenseQuery()
+    {
+        return dbContext.PrescriptionDispenses
+            .Include(x => x.Prescription)
+            .Include(x => x.Patient)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Doctor)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Items)
+            .ThenInclude(x => x.Medicine)
+            .Include(x => x.Items)
+            .ThenInclude(x => x.PrescriptionItem)
+            .Include(x => x.Items)
+            .ThenInclude(x => x.Batches)
+            .ThenInclude(x => x.StockBatch);
     }
 
     private static List<ValidationError> ValidateMedicine(CreateMedicineRequest request)
@@ -512,6 +777,44 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         if (request.ReorderLevel < 0)
         {
             errors.Add(new ValidationError(nameof(request.ReorderLevel), "ReorderLevel cannot be negative."));
+        }
+
+        return errors;
+    }
+
+    private static List<ValidationError> ValidateDispenseRequest(DispensePrescriptionRequest request)
+    {
+        var errors = new List<ValidationError>();
+        Required(request.VerificationCode, nameof(request.VerificationCode), errors);
+        if (request.Items is null || request.Items.Count == 0)
+        {
+            errors.Add(new ValidationError(nameof(request.Items), "At least one prescription item is required."));
+            return errors;
+        }
+
+        for (var index = 0; index < request.Items.Count; index++)
+        {
+            var item = request.Items[index];
+            var prefix = $"{nameof(request.Items)}[{index}]";
+            if (item.PrescriptionItemId == Guid.Empty)
+            {
+                errors.Add(new ValidationError($"{prefix}.{nameof(item.PrescriptionItemId)}", "PrescriptionItemId is required."));
+            }
+
+            if (item.MedicineId == Guid.Empty)
+            {
+                errors.Add(new ValidationError($"{prefix}.{nameof(item.MedicineId)}", "MedicineId is required."));
+            }
+
+            if (item.QuantityToDispense <= 0)
+            {
+                errors.Add(new ValidationError($"{prefix}.{nameof(item.QuantityToDispense)}", "QuantityToDispense must be greater than zero."));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Notes) && request.Notes.Trim().Length > 1000)
+        {
+            errors.Add(new ValidationError(nameof(request.Notes), "Notes cannot exceed 1000 characters."));
         }
 
         return errors;
@@ -572,6 +875,104 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         }
 
         return errors;
+    }
+
+    private async Task<IReadOnlyList<MedicineAvailabilityResponse>> FindSuggestedMedicinesAsync(
+        PrescriptionItem item,
+        CancellationToken cancellationToken)
+    {
+        var medicines = await MedicineQuery()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.BrandName)
+            .Take(300)
+            .ToListAsync(cancellationToken);
+
+        return medicines
+            .Where(x => IsSuggestedMedicine(x, item))
+            .Select(x => new MedicineAvailabilityResponse(
+                x.Id,
+                x.BrandName,
+                x.Strength,
+                x.UnitPrice,
+                CalculateUsableStock(x),
+                CalculateUsableStock(x) >= Math.Ceiling(item.Quantity)))
+            .OrderByDescending(x => x.IsAvailable)
+            .ThenBy(x => x.MedicineName)
+            .Take(8)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> ValidatePrescriptionForDispense(
+        Prescription prescription,
+        bool verificationMatched,
+        bool alreadyDispensed)
+    {
+        var messages = new List<string>();
+        if (!verificationMatched)
+        {
+            messages.Add("Prescription verification code is invalid.");
+        }
+
+        if (alreadyDispensed)
+        {
+            messages.Add("Prescription has already been dispensed.");
+        }
+
+        if (prescription.Status != PrescriptionStatus.Issued)
+        {
+            messages.Add($"Prescription status is {prescription.Status}.");
+        }
+
+        if (prescription.ValidUntil < DateTimeOffset.UtcNow)
+        {
+            messages.Add("Prescription is expired.");
+        }
+
+        if (!IsDoctorLicenseValid(prescription))
+        {
+            messages.Add("Doctor license is not valid for dispensing.");
+        }
+
+        return messages;
+    }
+
+    private static bool IsDoctorLicenseValid(Prescription prescription)
+    {
+        return prescription.Doctor.IsActive
+            && prescription.Doctor.IsVerified
+            && !string.IsNullOrWhiteSpace(prescription.Doctor.PmdcRegistrationNumber);
+    }
+
+    private static bool IsSuggestedMedicine(Medicine medicine, PrescriptionItem item)
+    {
+        var terms = new[]
+            {
+                item.MedicineName,
+                item.GenericName,
+                item.Strength
+            }
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .ToArray();
+
+        if (terms.Length == 0)
+        {
+            return false;
+        }
+
+        return terms.Any(term =>
+            medicine.BrandName.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || medicine.GenericName.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || term.Contains(medicine.BrandName, StringComparison.OrdinalIgnoreCase)
+            || term.Contains(medicine.GenericName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int CalculateUsableStock(Medicine medicine)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        return medicine.StockBatches
+            .Where(x => x.QuantityOnHand > 0 && x.ExpiryDate > today)
+            .Sum(x => x.QuantityOnHand);
     }
 
     private static FifoBatchSelectionResponse BuildFifoSelection(Medicine medicine, int quantityRequired)
@@ -721,6 +1122,109 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         };
     }
 
+    private async Task<string> GenerateDispenseNumberAsync(DateTimeOffset dispensedAt, CancellationToken cancellationToken)
+    {
+        var datePart = dispensedAt.UtcDateTime.ToString("yyyyMMdd");
+        var prefix = $"DSP-{datePart}-";
+        var count = await dbContext.PrescriptionDispenses.CountAsync(x => x.DispenseNumber.StartsWith(prefix), cancellationToken);
+        return $"{prefix}{count + 1:000000}";
+    }
+
+    private static byte[] GenerateReceiptPdf(PrescriptionDispense dispense)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+
+        return Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Margin(32);
+                page.Size(PageSizes.A4);
+                page.DefaultTextStyle(text => text.FontSize(10).FontFamily(Fonts.Arial));
+
+                page.Header().Column(column =>
+                {
+                    column.Item().Text("HealthCareMS Pharmacy Receipt").FontSize(18).Bold().FontColor(Colors.Green.Darken2);
+                    column.Item().Text($"Receipt: {dispense.ReceiptNumber}");
+                    column.Item().Text($"Prescription: {dispense.Prescription.PrescriptionNumber}");
+                    column.Item().PaddingTop(8).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+                });
+
+                page.Content().PaddingVertical(14).Column(column =>
+                {
+                    column.Spacing(10);
+                    column.Item().Row(row =>
+                    {
+                        row.RelativeItem().Column(left =>
+                        {
+                            left.Item().Text("Patient").Bold();
+                            left.Item().Text($"{dispense.Patient.FirstName} {dispense.Patient.LastName}".Trim());
+                        });
+
+                        row.RelativeItem().Column(right =>
+                        {
+                            right.Item().Text("Doctor").Bold();
+                            right.Item().Text(dispense.Doctor.User.FullName);
+                            right.Item().Text($"PMDC: {dispense.Doctor.PmdcRegistrationNumber}");
+                        });
+                    });
+
+                    column.Item().Text($"Dispensed at {dispense.DispensedAt:yyyy-MM-dd HH:mm} UTC");
+                    column.Item().Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn(2);
+                            columns.RelativeColumn(1);
+                            columns.RelativeColumn(1);
+                            columns.RelativeColumn(1);
+                            columns.RelativeColumn(1);
+                        });
+
+                        table.Header(header =>
+                        {
+                            header.Cell().Element(HeaderCell).Text("Medicine");
+                            header.Cell().Element(HeaderCell).Text("Qty");
+                            header.Cell().Element(HeaderCell).Text("Unit");
+                            header.Cell().Element(HeaderCell).Text("Total");
+                            header.Cell().Element(HeaderCell).Text("Batches");
+                        });
+
+                        foreach (var item in dispense.Items.OrderBy(x => x.DispensedMedicineName))
+                        {
+                            var batchText = string.Join(", ", item.Batches
+                                .OrderBy(x => x.BatchNumber)
+                                .Select(x => $"{x.BatchNumber} x{x.QuantityDispensed}"));
+                            table.Cell().Element(BodyCell).Text(item.DispensedMedicineName);
+                            table.Cell().Element(BodyCell).Text(item.QuantityDispensed.ToString(CultureInfo.InvariantCulture));
+                            table.Cell().Element(BodyCell).Text(item.UnitPrice.ToString("0.00", CultureInfo.InvariantCulture));
+                            table.Cell().Element(BodyCell).Text(item.LineTotal.ToString("0.00", CultureInfo.InvariantCulture));
+                            table.Cell().Element(BodyCell).Text(batchText);
+                        }
+                    });
+
+                    column.Item().AlignRight().Column(total =>
+                    {
+                        total.Item().Text($"SubTotal: {dispense.SubTotal:0.00}").Bold();
+                        total.Item().Text($"Total: {dispense.TotalAmount:0.00}").FontSize(13).Bold();
+                    });
+
+                    if (!string.IsNullOrWhiteSpace(dispense.Notes))
+                    {
+                        column.Item().Text("Notes").Bold();
+                        column.Item().Text(dispense.Notes);
+                    }
+                });
+
+                page.Footer().AlignCenter().Text(text =>
+                {
+                    text.Span("Verification code: ");
+                    text.Span(dispense.VerificationCode).Bold();
+                });
+            });
+        }).GeneratePdf();
+    }
+
     private static MedicineResponse Map(Medicine medicine)
     {
         var batches = medicine.StockBatches
@@ -793,6 +1297,73 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             alert.QuantityOnHand,
             alert.ExpiryDate,
             alert.DetectedAt);
+    }
+
+    private static PrescriptionDispenseResponse Map(PrescriptionDispense dispense)
+    {
+        return new PrescriptionDispenseResponse(
+            dispense.Id,
+            dispense.DispenseNumber,
+            dispense.ReceiptNumber,
+            dispense.PrescriptionId,
+            dispense.Prescription.PrescriptionNumber,
+            dispense.PatientId,
+            $"{dispense.Patient.FirstName} {dispense.Patient.LastName}".Trim(),
+            dispense.DoctorId,
+            dispense.Doctor.User.FullName,
+            dispense.Status.ToString(),
+            dispense.DispensedAt,
+            dispense.SubTotal,
+            dispense.TotalAmount,
+            dispense.Notes,
+            dispense.Items
+                .OrderBy(x => x.DispensedMedicineName)
+                .Select(Map)
+                .ToList());
+    }
+
+    private static PrescriptionDispenseItemResponse Map(PrescriptionDispenseItem item)
+    {
+        return new PrescriptionDispenseItemResponse(
+            item.Id,
+            item.PrescriptionItemId,
+            item.MedicineId,
+            item.PrescribedMedicineName,
+            item.DispensedMedicineName,
+            item.QuantityPrescribed,
+            item.QuantityDispensed,
+            item.UnitPrice,
+            item.LineTotal,
+            item.Batches
+                .OrderBy(x => x.BatchNumber)
+                .Select(Map)
+                .ToList());
+    }
+
+    private static PrescriptionDispenseBatchResponse Map(PrescriptionDispenseBatch batch)
+    {
+        return new PrescriptionDispenseBatchResponse(
+            batch.StockBatchId,
+            batch.BatchNumber,
+            batch.StockBatch.ExpiryDate,
+            batch.QuantityDispensed);
+    }
+
+    private static IContainer HeaderCell(IContainer container)
+    {
+        return container
+            .Background(Colors.Green.Lighten4)
+            .Border(1)
+            .BorderColor(Colors.Grey.Lighten1)
+            .Padding(5);
+    }
+
+    private static IContainer BodyCell(IContainer container)
+    {
+        return container
+            .BorderBottom(1)
+            .BorderColor(Colors.Grey.Lighten2)
+            .Padding(5);
     }
 
     private static IReadOnlyList<string> SplitCsvLine(string line)

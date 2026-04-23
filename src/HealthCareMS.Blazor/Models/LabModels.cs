@@ -50,6 +50,38 @@ public sealed record LabBookingItemModel(
     string Category,
     decimal Price);
 
+public sealed record LabTestImportModel(
+    int ImportedCount,
+    IReadOnlyList<LabTestModel> Tests);
+
+public sealed class LabPanelFormModel
+{
+    public Guid? TenantId { get; set; }
+
+    public string PanelCode { get; set; } = string.Empty;
+
+    public string PanelName { get; set; } = string.Empty;
+
+    public string Category { get; set; } = "General";
+
+    public string? Description { get; set; }
+
+    public decimal? Price { get; set; }
+
+    public IReadOnlyList<Guid> LabTestIds { get; set; } = [];
+}
+
+public sealed record LabPanelModel(
+    Guid Id,
+    Guid? TenantId,
+    string PanelCode,
+    string PanelName,
+    string Category,
+    string? Description,
+    decimal Price,
+    bool IsActive,
+    IReadOnlyList<LabTestModel> Tests);
+
 public sealed record ConsultationSummaryModel(
     Guid AppointmentId,
     string AppointmentNumber,
