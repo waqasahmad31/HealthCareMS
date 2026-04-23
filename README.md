@@ -33,7 +33,7 @@ Enterprise health-care management system built on **.NET 10** with a **Blazor We
 | **Collaboration** | Consultation chat with attachments (SignalR), read receipts |
 | **Notifications** | Email (SMTP), SMS (Twilio), in-app (SignalR), scheduled reminders (Hangfire) |
 | **Portals** | Doctor and patient dashboards; admin for appointments, doctors, and system configuration |
-| **Pharmacy** | Medicine catalogue, stock batches (including FIFO), alerts, bulk import, barcode |
+| **Pharmacy** | Medicine catalog, stock batches (including FIFO), alerts, bulk import, barcode |
 | **Labs** | Lab orders from consultation, consultation summary PDFs |
 
 > Implementation status and verification notes: see [`IMPLEMENTATION_PROGRESS.md`](IMPLEMENTATION_PROGRESS.md) in the repository root.
@@ -178,7 +178,7 @@ dotnet tool install --global dotnet-ef
 
 ## API documentation
 
-OpenAPI is enabled for the API project. In development, open the OpenAPI document via the app’s OpenAPI endpoint (as configured in `Program.cs` for your ASP.NET Core version) or use Swagger UI if you add the Swashbuckle or equivalent UI package.
+OpenAPI is enabled for the API project. In development, open the OpenAPI document via the application OpenAPI endpoint (as configured in `Program.cs` for your ASP.NET Core version) or use Swagger UI if you add the Swashbuckle or equivalent UI package.
 
 ---
 
