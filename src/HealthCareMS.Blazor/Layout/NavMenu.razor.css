@@ -4,13 +4,43 @@
 
 .top-row {
     min-height: 4.5rem;
-    background-color: #102336;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(15, 31, 51, 0.96), rgba(16, 42, 67, 0.92));
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
 }
 
 .navbar-brand {
     font-size: 1.12rem;
     font-weight: 800;
+}
+
+.premium-brand {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.55rem;
+}
+
+.premium-brand small {
+    color: #93c5fd;
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    margin-top: -0.1rem;
+    text-transform: uppercase;
+}
+
+.brand-mark {
+    align-items: center;
+    background: linear-gradient(135deg, #38bdf8, #0284c7);
+    border-radius: 7px;
+    box-shadow: 0 6px 14px rgba(2, 132, 199, 0.28);
+    color: #ffffff;
+    display: inline-flex;
+    font-size: 0.78rem;
+    font-weight: 900;
+    height: 1.6rem;
+    justify-content: center;
+    width: 1.6rem;
 }
 
 .nav-item {
@@ -34,16 +64,19 @@
         align-items: center;
         line-height: 3rem;
         padding-left: 0.75rem;
+        transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
     }
 
 .nav-item ::deep a.active {
-    background-color: #0ea5e9;
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
     color: white;
+    box-shadow: 0 8px 18px rgba(2, 132, 199, 0.24);
 }
 
 .nav-item ::deep a:hover {
-    background-color: rgba(255,255,255,0.08);
+    background-color: rgba(255,255,255,0.12);
     color: white;
+    transform: translateX(1px);
 }
 
 .nav-symbol {
@@ -57,6 +90,11 @@
     justify-content: center;
     margin-right: 0.75rem;
     width: 1.45rem;
+    transition: transform 0.18s ease;
+}
+
+.nav-item ::deep a:hover .nav-symbol {
+    transform: scale(1.06);
 }
 
 .nav-section {

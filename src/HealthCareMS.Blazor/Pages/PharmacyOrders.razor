@@ -25,9 +25,18 @@
         </div>
         <div class="entity-form pharmacy-filter">
             <label>Search<InputText @bind-Value="Search" /></label>
-            <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Search</button>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Search</button>
+                <button class="text-button" type="button" @onclick="ResetMedicineSearch">Reset</button>
+            </div>
         </div>
         <div class="table-shell">
+            <div class="table-row table-head pharmacy-order-row">
+                <span>Medicine</span>
+                <span>Unit Price</span>
+                <span>Stock</span>
+                <span>Action</span>
+            </div>
             @foreach (var medicine in Medicines)
             {
                 <div class="table-row pharmacy-order-row">
@@ -53,6 +62,12 @@
             <InputFile OnChange="OnPrescriptionUploadAsync" />
         </EditForm>
         <div class="table-shell cart-list">
+            <div class="table-row table-head pharmacy-order-row">
+                <span>Medicine</span>
+                <span>Qty</span>
+                <span>Line Total</span>
+                <span>Action</span>
+            </div>
             @foreach (var line in Cart)
             {
                 <div class="table-row pharmacy-order-row">
@@ -87,6 +102,12 @@
         <button class="secondary-button" type="button" @onclick="LoadOrdersAsync" disabled="@IsBusy">Filter</button>
     </div>
     <div class="table-shell">
+        <div class="table-row table-head pharmacy-online-order-row">
+            <span>Order</span>
+            <span>Status</span>
+            <span>Agent</span>
+            <span>Actions</span>
+        </div>
         @foreach (var order in Orders)
         {
             <div class="table-row pharmacy-online-order-row">
@@ -268,6 +289,11 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetMedicineSearch()
+    {
+        Search = string.Empty;
     }
 
     private sealed class CartLine(Guid medicineId, string medicineName, decimal unitPrice, int quantity)

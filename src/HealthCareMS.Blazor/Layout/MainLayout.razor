@@ -1,4 +1,6 @@
 @inherits LayoutComponentBase
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 <div class="page">
     <div class="sidebar">
@@ -14,6 +16,7 @@
             <div class="top-actions">
                 <a class="icon-button" title="Notifications" aria-label="Notifications" href="notifications">N</a>
                 <span class="role-badge">SuperAdmin</span>
+                <button class="text-button" type="button" @onclick="ToggleThemeAsync">@ThemeLabel</button>
                 <button class="text-button">Logout</button>
             </div>
         </div>
@@ -23,3 +26,34 @@
         </article>
     </main>
 </div>
+
+@code {
+    private string ThemeLabel { get; set; } = "Theme";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        ThemeLabel = await JS.InvokeAsync<string>("healthCareTheme.init");
+        StateHasChanged();
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        ThemeLabel = await JS.InvokeAsync<string>("healthCareTheme.toggle");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("healthCareTheme.sync");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

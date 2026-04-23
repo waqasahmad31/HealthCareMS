@@ -69,7 +69,8 @@
             </label>
             <div class="header-actions">
                 <button class="secondary-button" type="button" @onclick="LoadVitalsAsync" disabled="@IsBusy">Load History</button>
-                <button class="secondary-button" type="button" @onclick="ResetForm">Reset</button>
+                <button class="secondary-button" type="button" @onclick="ResetForm">Reset Form</button>
+                <button class="text-button" type="button" @onclick="ResetPatientScope">Reset Patient</button>
             </div>
         </EditForm>
     </article>
@@ -304,5 +305,10 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetPatientScope()
+    {
+        PatientIdText = string.Empty;
     }
 }

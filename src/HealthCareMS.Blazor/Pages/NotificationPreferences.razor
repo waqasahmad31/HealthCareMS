@@ -14,12 +14,19 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Load Preferences</h2>
+        <span class="status-pill blue">User Scope</span>
+    </div>
     <div class="entity-form notification-filter">
         <label>
             UserId
             <InputText @bind-Value="UserIdText" />
         </label>
-        <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+            <button class="text-button" type="button" @onclick="ResetUserScope">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -119,6 +126,11 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetUserScope()
+    {
+        UserIdText = string.Empty;
     }
 
     private sealed class PreferencesForm

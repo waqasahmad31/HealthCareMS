@@ -7,7 +7,10 @@
         <p class="eyebrow">Super Admin</p>
         <h1>Tenants</h1>
     </div>
-    <button class="primary-button">New Tenant</button>
+    <div class="action-cluster">
+        <button class="secondary-button" type="button">Export</button>
+        <button class="primary-button" type="button">New Tenant</button>
+    </div>
 </section>
 
 <section class="panel split-panel">
@@ -49,12 +52,13 @@
     </EditForm>
 
     <div class="table-shell">
+        <div class="panel-subtitle">Tenant Registry</div>
         <div class="table-row table-head">
             <span>Tenant</span>
             <span>Type</span>
             <span>Status</span>
         </div>
-        <div class="table-row">
+        <div class="table-row grid-empty">
             <span>Awaiting first tenant</span>
             <span>--</span>
             <span class="status-pill amber">Empty</span>

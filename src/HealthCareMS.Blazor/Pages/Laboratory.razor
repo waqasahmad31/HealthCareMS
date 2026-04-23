@@ -50,7 +50,10 @@
         </div>
         <div class="entity-form pharmacy-filter">
             <label>Search<InputText @bind-Value="Search" /></label>
-            <button class="secondary-button" type="button" @onclick="LoadTestsAsync" disabled="@IsBusy">Search</button>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="LoadTestsAsync" disabled="@IsBusy">Search</button>
+                <button class="text-button" type="button" @onclick="ResetTestSearch">Reset</button>
+            </div>
         </div>
         <div class="table-shell lab-test-list">
             <div class="table-row lab-test-row table-head">
@@ -110,6 +113,12 @@
             <span class="status-pill blue">@LabPanels.Count</span>
         </div>
         <div class="table-shell">
+            <div class="table-row table-head lab-panel-row">
+                <span>Panel</span>
+                <span>Category</span>
+                <span>Tests</span>
+                <span>Price</span>
+            </div>
             @foreach (var panel in LabPanels)
             {
                 <div class="table-row lab-panel-row">
@@ -165,6 +174,12 @@
             Fasting verified
         </label>
         <div class="table-shell">
+            <div class="table-row table-head lab-booking-row">
+                <span>Booking</span>
+                <span>Token / Status</span>
+                <span>Barcode</span>
+                <span>Actions</span>
+            </div>
             @foreach (var booking in CheckInBookings)
             {
                 <div class="table-row lab-booking-row">
@@ -409,5 +424,10 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetTestSearch()
+    {
+        Search = string.Empty;
     }
 }

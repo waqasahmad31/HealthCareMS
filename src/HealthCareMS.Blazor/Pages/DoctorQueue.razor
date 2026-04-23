@@ -18,6 +18,10 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Queue Filters</h2>
+        <span class="status-pill blue">Doctor Context</span>
+    </div>
     <div class="entity-form queue-filter">
         <label>
             DoctorId
@@ -27,7 +31,10 @@
             Date
             <input type="date" value="@QueueDateText" @onchange="OnQueueDateChanged" />
         </label>
-        <button class="secondary-button" type="button" @onclick="ConnectAsync">Connect</button>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="ConnectAsync">Connect</button>
+            <button class="text-button" type="button" @onclick="ResetQueueFilters">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -198,6 +205,12 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetQueueFilters()
+    {
+        DoctorIdText = string.Empty;
+        QueueDateText = DateTime.UtcNow.ToString("yyyy-MM-dd");
     }
 
     public async ValueTask DisposeAsync()

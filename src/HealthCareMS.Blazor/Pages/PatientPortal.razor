@@ -14,6 +14,10 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Portal Filters</h2>
+        <span class="status-pill blue">Patient Context</span>
+    </div>
     <div class="entity-form portal-filter">
         <label>
             PatientId
@@ -35,8 +39,12 @@
                 <option value="NoShow">NoShow</option>
             </select>
         </label>
-        <button class="secondary-button" type="button" @onclick="LoadAppointmentsAsync" disabled="@IsBusy">Appointments</button>
-        <button class="secondary-button" type="button" @onclick="LoadDetailAsync" disabled="@IsBusy">Detail</button>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadDashboardAsync" disabled="@IsBusy">Apply</button>
+            <button class="secondary-button" type="button" @onclick="LoadAppointmentsAsync" disabled="@IsBusy">Appointments</button>
+            <button class="secondary-button" type="button" @onclick="LoadDetailAsync" disabled="@IsBusy">Detail</button>
+            <button class="text-button" type="button" @onclick="ResetFilters">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -94,6 +102,11 @@
                 <span class="status-pill green">@Dashboard.PastAppointments.Count</span>
             </div>
             <div class="table-shell">
+                <div class="table-row table-head portal-row">
+                    <span>Schedule</span>
+                    <span>Doctor</span>
+                    <span>Status</span>
+                </div>
                 @foreach (var appointment in Dashboard.PastAppointments)
                 {
                     <div class="table-row portal-row">
@@ -131,6 +144,12 @@
             <span class="status-pill blue">@MyAppointments.Count</span>
         </div>
         <div class="table-shell">
+            <div class="table-row table-head portal-appointments-row">
+                <span>Schedule</span>
+                <span>Doctor</span>
+                <span>Status</span>
+                <span>Action</span>
+            </div>
             @foreach (var appointment in MyAppointments)
             {
                 <div class="table-row portal-appointments-row">
@@ -291,5 +310,12 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetFilters()
+    {
+        PatientIdText = string.Empty;
+        AppointmentIdText = string.Empty;
+        AppointmentStatusFilter = string.Empty;
     }
 }

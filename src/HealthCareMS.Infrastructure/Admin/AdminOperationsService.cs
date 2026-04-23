@@ -3,6 +3,7 @@ using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
+using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,7 @@ namespace HealthCareMS.Infrastructure.Admin;
 
 public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurrentUser? currentUser = null) : IAdminOperationsService
 {
-    private const string NavigationSettingKey = "Platform.Navigation.MenuConfigJson";
+    private const string NavigationSettingKey = NavigationDefaults.SettingKey;
     private const string NavigationAssignmentSettingPrefix = "Navigation.Assignment.User.";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly SystemSetting[] DefaultSettings =
@@ -30,9 +31,7 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
             NavigationSettingKey,
             "Platform",
             "Navigation menu configuration",
-            """
-            {"groups":[{"key":"general","sortOrder":10,"labels":{"en":"General","ur":"جنرل"},"items":[{"key":"dashboard","label":{"en":"Dashboard","ur":"ڈیش بورڈ"},"icon":"D","route":"","sortOrder":10},{"key":"notifications","label":{"en":"Notifications","ur":"نوٹیفکیشنز"},"icon":"N","route":"notifications","sortOrder":20}]},{"key":"admin","sortOrder":20,"labels":{"en":"Admin","ur":"ایڈمن"},"items":[{"key":"tenants","label":{"en":"Tenants","ur":"ٹیننٹس"},"icon":"T","route":"tenants","sortOrder":10,"requiredPermissions":["system.tenants.create"]},{"key":"doctors","label":{"en":"Doctors","ur":"ڈاکٹرز"},"icon":"V","route":"admin/doctors","sortOrder":20,"requiredPermissions":["doctor.verify"]},{"key":"config","label":{"en":"Configuration","ur":"کنفیگریشن"},"icon":"K","route":"admin/system-configuration","sortOrder":30,"requiredPermissions":["tenant.settings.update"]}]},{"key":"operations","sortOrder":30,"labels":{"en":"Operations","ur":"آپریشنز"},"items":[{"key":"doctor-portal","label":{"en":"Doctor Portal","ur":"ڈاکٹر پورٹل"},"icon":"D","route":"portal/doctor","sortOrder":10,"requiredPermissions":["doctor.schedule.manage"]},{"key":"patient-portal","label":{"en":"Patient Portal","ur":"پیشنٹ پورٹل"},"icon":"U","route":"portal/patient","sortOrder":20,"requiredPermissions":["patient.records.view_own"]},{"key":"pharmacy","label":{"en":"Pharmacy","ur":"فارمیسی"},"icon":"R","route":"pharmacy","sortOrder":30,"requiredPermissions":["pharmacy.medicines.view"]},{"key":"lab","label":{"en":"Laboratory","ur":"لیبارٹری"},"icon":"L","route":"laboratory","sortOrder":40,"requiredPermissions":["lab.tests.view"]}]}]}
-            """,
+            NavigationDefaults.ConfigurationJson,
             "Json",
             "JSON configuration for role and permission-based navigation menu (EN/UR).")
     ];

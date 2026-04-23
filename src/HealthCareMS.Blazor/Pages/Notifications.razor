@@ -18,6 +18,10 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Notification Filters</h2>
+        <span class="status-pill blue">Delivery Feed</span>
+    </div>
     <div class="entity-form notification-filter">
         <label>
             UserId
@@ -27,8 +31,11 @@
             <InputCheckbox @bind-Value="UnreadOnly" />
             Unread
         </label>
-        <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Refresh</button>
-        <button class="primary-button" type="button" @onclick="ConnectAsync" disabled="@IsBusy">Live</button>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Refresh</button>
+            <button class="primary-button" type="button" @onclick="ConnectAsync" disabled="@IsBusy">Live</button>
+            <button class="text-button" type="button" @onclick="ResetFilters">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -179,6 +186,12 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetFilters()
+    {
+        UserIdText = string.Empty;
+        UnreadOnly = false;
     }
 
     public async ValueTask DisposeAsync()

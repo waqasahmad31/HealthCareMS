@@ -14,6 +14,10 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Portal Filters</h2>
+        <span class="status-pill blue">Doctor Context</span>
+    </div>
     <div class="entity-form portal-filter">
         <label>
             DoctorId
@@ -27,7 +31,11 @@
             PatientId
             <InputText @bind-Value="PatientIdText" />
         </label>
-        <button class="secondary-button" type="button" @onclick="LoadHistoryAsync" disabled="@IsBusy">History</button>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadDashboardAsync" disabled="@IsBusy">Apply</button>
+            <button class="secondary-button" type="button" @onclick="LoadHistoryAsync" disabled="@IsBusy">History</button>
+            <button class="text-button" type="button" @onclick="ResetFilters">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -85,6 +93,11 @@
                 <span class="status-pill green">@Dashboard.UpcomingAppointmentCount</span>
             </div>
             <div class="table-shell">
+                <div class="table-row table-head portal-row">
+                    <span>Schedule</span>
+                    <span>Patient</span>
+                    <span>Status</span>
+                </div>
                 @foreach (var appointment in Dashboard.UpcomingAppointments)
                 {
                     <div class="table-row portal-row">
@@ -103,6 +116,12 @@
             <span class="status-pill blue">@Dashboard.MySchedule.Count</span>
         </div>
         <div class="table-shell">
+            <div class="table-row table-head schedule-row">
+                <span>Day</span>
+                <span>Window</span>
+                <span>Slot</span>
+                <span>Mode</span>
+            </div>
             @foreach (var slot in Dashboard.MySchedule)
             {
                 <div class="table-row schedule-row">
@@ -239,5 +258,12 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetFilters()
+    {
+        DoctorIdText = string.Empty;
+        PatientIdText = string.Empty;
+        DashboardDateText = DateTime.UtcNow.ToString("yyyy-MM-dd");
     }
 }

@@ -14,6 +14,10 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Filter Appointments</h2>
+        <span class="status-pill blue">Ops View</span>
+    </div>
     <div class="entity-form admin-filter">
         <label>
             Date
@@ -43,6 +47,10 @@
             PageSize
             <InputNumber @bind-Value="PageSize" />
         </label>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Apply Filters</button>
+            <button class="text-button" type="button" @onclick="ResetFilters">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -77,6 +85,14 @@
             <span class="status-pill blue">@Overview.Appointments.Count</span>
         </div>
         <div class="table-shell">
+            <div class="table-row table-head admin-appointment-row">
+                <span>Scheduled</span>
+                <span>Patient</span>
+                <span>Doctor</span>
+                <span>Status</span>
+                <span>Type</span>
+                <span>Fee</span>
+            </div>
             @foreach (var appointment in Overview.Appointments)
             {
                 <div class="table-row admin-appointment-row">
@@ -179,5 +195,14 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetFilters()
+    {
+        DateText = string.Empty;
+        StatusFilter = string.Empty;
+        DoctorIdText = string.Empty;
+        PatientIdText = string.Empty;
+        PageSize = 50;
     }
 }

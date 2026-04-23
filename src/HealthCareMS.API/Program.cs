@@ -98,7 +98,8 @@ RecurringJob.AddOrUpdate<IPharmacyService>(
 
 if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))
 {
-    await app.Services.SeedHealthCareDatabaseAsync();
+    var seedDemoData = app.Configuration.GetValue("Database:SeedDemoData", app.Environment.IsDevelopment());
+    await app.Services.SeedHealthCareDatabaseAsync(seedDemoData);
 }
 
 app.UseSerilogRequestLogging();

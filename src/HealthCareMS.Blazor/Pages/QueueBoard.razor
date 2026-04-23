@@ -63,7 +63,10 @@
                 Date
                 <input type="date" value="@QueueDateText" @onchange="OnQueueDateChanged" />
             </label>
-            <button class="secondary-button" type="button" @onclick="ConnectAsync">Connect</button>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="ConnectAsync">Connect</button>
+                <button class="text-button" type="button" @onclick="ResetBoardFilters">Reset</button>
+            </div>
         </div>
 
         <div class="queue-summary">
@@ -236,6 +239,12 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetBoardFilters()
+    {
+        DoctorIdText = string.Empty;
+        QueueDateText = DateTime.UtcNow.ToString("yyyy-MM-dd");
     }
 
     public async ValueTask DisposeAsync()

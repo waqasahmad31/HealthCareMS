@@ -14,6 +14,10 @@
 </section>
 
 <section class="panel">
+    <div class="panel-header">
+        <h2>Filter Doctors</h2>
+        <span class="status-pill blue">Search</span>
+    </div>
     <div class="entity-form admin-filter">
         <label>
             Specialization
@@ -39,6 +43,10 @@
                 <option value="false">Inactive</option>
             </select>
         </label>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Apply Filters</button>
+            <button class="text-button" type="button" @onclick="ResetFilters">Reset</button>
+        </div>
     </div>
 </section>
 
@@ -73,6 +81,15 @@
             <span class="status-pill blue">@Management.Doctors.Count</span>
         </div>
         <div class="table-shell">
+            <div class="table-row table-head admin-doctor-row">
+                <span>Name</span>
+                <span>Specialization</span>
+                <span>City</span>
+                <span>Verification</span>
+                <span>Account</span>
+                <span>Verify</span>
+                <span>Access</span>
+            </div>
             @foreach (var doctor in Management.Doctors)
             {
                 <div class="table-row admin-doctor-row">
@@ -171,5 +188,13 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetFilters()
+    {
+        SpecializationFilter = string.Empty;
+        CityFilter = string.Empty;
+        VerifiedFilter = string.Empty;
+        ActiveFilter = string.Empty;
     }
 }

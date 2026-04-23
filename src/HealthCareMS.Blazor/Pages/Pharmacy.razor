@@ -57,7 +57,10 @@
                 Search
                 <InputText @bind-Value="Search" />
             </label>
-            <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Search</button>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Search</button>
+                <button class="text-button" type="button" @onclick="ResetCatalogueSearch">Reset</button>
+            </div>
         </div>
         <div class="table-shell">
             <div class="table-row table-head pharmacy-row">
@@ -708,6 +711,11 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private void ResetCatalogueSearch()
+    {
+        Search = string.Empty;
     }
 
     private sealed class DispenseLineForm
