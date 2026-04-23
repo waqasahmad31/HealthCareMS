@@ -10,6 +10,7 @@ using HealthCareMS.Application;
 using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Application.Notifications;
+using HealthCareMS.Application.Pharmacy;
 using HealthCareMS.Infrastructure;
 using HealthCareMS.Infrastructure.Authentication;
 using HealthCareMS.Infrastructure.Seed;
@@ -89,6 +90,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.UseHangfireDashboard("/hangfire");
 }
+
+RecurringJob.AddOrUpdate<IPharmacyService>(
+    "PharmacyStockAlertScan",
+    service => service.RunStockAlertScanAsync(CancellationToken.None),
+    Cron.Daily);
 
 if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))
 {

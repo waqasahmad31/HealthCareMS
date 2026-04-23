@@ -499,6 +499,18 @@ a, .btn-link {
     padding: 1rem;
 }
 
+.video-console.low-bandwidth .remote-video,
+.video-console.low-bandwidth .video-stage {
+    min-height: 24rem;
+}
+
+.mobile-video-toolbar {
+    display: none;
+    gap: 0.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 0.75rem;
+}
+
 .compact-session-summary {
     grid-template-columns: 1fr;
 }
@@ -911,6 +923,33 @@ a, .btn-link {
     grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.45fr) minmax(5rem, 0.25fr) auto;
 }
 
+.stock-batch-list {
+    margin-top: 1rem;
+}
+
+.stock-batch-row,
+.fifo-row,
+.stock-alert-row,
+.review-row {
+    grid-template-columns: minmax(0, 0.8fr) minmax(7rem, 0.45fr) minmax(0, 1fr) auto;
+}
+
+.stock-batch-row.selected {
+    background: #f0f9ff;
+    border-color: #0ea5e9;
+}
+
+.rating-summary {
+    display: grid;
+    gap: 0.2rem;
+    margin-bottom: 1rem;
+}
+
+.rating-summary strong {
+    color: #0f172a;
+    font-size: 1.7rem;
+}
+
 .notification-filter {
     align-items: end;
     display: grid;
@@ -1186,6 +1225,10 @@ code {
     .summary-lab-row,
     .pharmacy-filter,
     .pharmacy-row,
+    .stock-batch-row,
+    .fifo-row,
+    .stock-alert-row,
+    .review-row,
     .notification-filter,
     .notification-item,
     .preferences-grid,
@@ -1211,6 +1254,14 @@ code {
     .video-stage,
     .remote-video {
         min-height: 24rem;
+    }
+
+    .mobile-video-toolbar {
+        display: grid;
+    }
+
+    .video-side-panel.closed {
+        display: none;
     }
 
     .local-video {

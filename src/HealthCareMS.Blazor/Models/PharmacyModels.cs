@@ -82,3 +82,78 @@ public sealed record StockBatchModel(
 public sealed record MedicineImportModel(
     int ImportedCount,
     IReadOnlyList<MedicineModel> Medicines);
+
+public sealed class StockAdjustmentFormModel
+{
+    public int QuantityDelta { get; set; }
+
+    public string AdjustmentType { get; set; } = "Correction";
+
+    public string Reason { get; set; } = string.Empty;
+}
+
+public sealed class FifoDispenseFormModel
+{
+    public int QuantityRequired { get; set; } = 1;
+
+    public string? Reason { get; set; }
+}
+
+public sealed record StockAdjustmentModel(
+    Guid Id,
+    Guid MedicineId,
+    Guid StockBatchId,
+    string BatchNumber,
+    string AdjustmentType,
+    int QuantityDelta,
+    int PreviousQuantity,
+    int NewQuantity,
+    string Reason,
+    DateTimeOffset AdjustedAt);
+
+public sealed record StockAlertModel(
+    Guid Id,
+    Guid MedicineId,
+    string MedicineName,
+    Guid? StockBatchId,
+    string? BatchNumber,
+    string AlertType,
+    string Status,
+    string Severity,
+    string Message,
+    int? ThresholdQuantity,
+    int? QuantityOnHand,
+    DateOnly? ExpiryDate,
+    DateTimeOffset DetectedAt);
+
+public sealed record FifoBatchSelectionItemModel(
+    Guid StockBatchId,
+    string BatchNumber,
+    DateTimeOffset ReceivedAt,
+    DateOnly ExpiryDate,
+    int QuantityAvailable,
+    int QuantitySelected);
+
+public sealed record FifoBatchSelectionModel(
+    Guid MedicineId,
+    string MedicineName,
+    int QuantityRequired,
+    int QuantitySelected,
+    bool IsFulfillable,
+    IReadOnlyList<FifoBatchSelectionItemModel> Batches);
+
+public sealed record FifoDispenseModel(
+    Guid MedicineId,
+    string MedicineName,
+    int QuantityRequired,
+    int QuantityDispensed,
+    IReadOnlyList<FifoBatchSelectionItemModel> Batches,
+    IReadOnlyList<StockAdjustmentModel> Adjustments);
+
+public sealed record PharmacyStockDashboardModel(
+    int TotalMedicines,
+    int LowStockCount,
+    int ExpiryAlertCount,
+    IReadOnlyList<MedicineModel> LowStockMedicines,
+    IReadOnlyList<StockAlertModel> ExpiryAlerts,
+    IReadOnlyList<StockAlertModel> OpenAlerts);

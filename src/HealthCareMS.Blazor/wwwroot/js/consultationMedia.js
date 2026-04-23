@@ -1,13 +1,31 @@
 window.HealthCareMSMedia = {
   streams: {},
-  async startPreview(videoElementId) {
+  async startPreview(videoElementId, options) {
     const video = document.getElementById(videoElementId);
     if (!video || !navigator.mediaDevices?.getUserMedia) {
       return { success: false, message: "Camera or microphone is unavailable in this browser." };
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const lowBandwidth = Boolean(options?.lowBandwidth || navigator.connection?.saveData);
+      const constraints = lowBandwidth
+        ? {
+            video: {
+              width: { ideal: 320, max: 480 },
+              height: { ideal: 180, max: 270 },
+              frameRate: { ideal: 10, max: 15 },
+            },
+            audio: { echoCancellation: true, noiseSuppression: true },
+          }
+        : {
+            video: {
+              width: { ideal: 640, max: 960 },
+              height: { ideal: 360, max: 540 },
+              frameRate: { ideal: 24, max: 30 },
+            },
+            audio: { echoCancellation: true, noiseSuppression: true },
+          };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
       video.muted = true;
       await video.play();

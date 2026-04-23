@@ -25,6 +25,22 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
         return FromResult(result);
     }
 
+    [HttpGet("stock/dashboard")]
+    [RequirePermission(PermissionKeys.Pharmacy.StockView)]
+    public async Task<IActionResult> GetStockDashboard(CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetStockDashboardAsync(cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPost("stock/alerts/scan")]
+    [RequirePermission(PermissionKeys.Pharmacy.StockAdjust)]
+    public async Task<IActionResult> RunStockAlertScan(CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.RunStockAlertScanAsync(cancellationToken);
+        return FromResult(result);
+    }
+
     [HttpPost("medicines")]
     [RequirePermission(PermissionKeys.Pharmacy.MedicinesCreate)]
     public async Task<IActionResult> CreateMedicine(CreateMedicineRequest request, CancellationToken cancellationToken)
@@ -52,6 +68,47 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
         CancellationToken cancellationToken)
     {
         var result = await pharmacyService.CreateStockBatchAsync(medicineId, request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpGet("medicines/{medicineId:guid}/stock-batches")]
+    [RequirePermission(PermissionKeys.Pharmacy.StockView)]
+    public async Task<IActionResult> GetStockBatches(Guid medicineId, CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetStockBatchesAsync(medicineId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPost("stock-batches/{stockBatchId:guid}/adjustments")]
+    [RequirePermission(PermissionKeys.Pharmacy.StockAdjust)]
+    public async Task<IActionResult> AdjustStockBatch(
+        Guid stockBatchId,
+        AdjustStockBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.AdjustStockBatchAsync(stockBatchId, request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpGet("medicines/{medicineId:guid}/fifo-selection")]
+    [RequirePermission(PermissionKeys.Pharmacy.StockView)]
+    public async Task<IActionResult> GetFifoSelection(
+        Guid medicineId,
+        [FromQuery] int quantityRequired,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetFifoBatchSelectionAsync(medicineId, quantityRequired, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPost("medicines/{medicineId:guid}/fifo-dispense")]
+    [RequirePermission(PermissionKeys.Pharmacy.Dispense)]
+    public async Task<IActionResult> DispenseFifo(
+        Guid medicineId,
+        FifoDispenseRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.DispenseFifoAsync(medicineId, request, cancellationToken);
         return FromResult(result, StatusCodes.Status201Created);
     }
 

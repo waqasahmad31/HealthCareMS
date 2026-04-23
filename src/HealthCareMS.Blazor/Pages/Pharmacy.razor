@@ -13,9 +13,36 @@
     </div>
     <div class="header-actions">
         <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Refresh</button>
+        <button class="secondary-button" type="button" @onclick="RunAlertScanAsync" disabled="@IsBusy">Scan Alerts</button>
         <button class="primary-button" type="button" @onclick="CreateMedicineAsync" disabled="@IsBusy">Add Medicine</button>
     </div>
 </section>
+
+@if (StockDashboard is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card">
+            <span class="metric-label">Medicines</span>
+            <strong>@StockDashboard.TotalMedicines</strong>
+            <span class="tone-muted">catalogue</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Low Stock</span>
+            <strong>@StockDashboard.LowStockCount</strong>
+            <span class="tone-amber">reorder alerts</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Expiry Alerts</span>
+            <strong>@StockDashboard.ExpiryAlertCount</strong>
+            <span class="tone-blue">30/60/90 days</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Open Alerts</span>
+            <strong>@StockDashboard.OpenAlerts.Count</strong>
+            <span class="tone-green">active</span>
+        </article>
+    </section>
+}
 
 <section class="portal-grid">
     <article class="panel">
@@ -42,8 +69,8 @@
                 <div class="table-row pharmacy-row">
                     <span>@medicine.BrandName (@medicine.GenericName)</span>
                     <span>@medicine.DrapRegistrationNumber</span>
-                    <span>@medicine.StockOnHand</span>
-                    <button class="secondary-button small-button" type="button" @onclick="() => SelectMedicine(medicine)">Select</button>
+                    <span>@medicine.StockOnHand / reorder @medicine.ReorderLevel</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SelectMedicineAsync(medicine)">Select</button>
                 </div>
             }
         </div>
@@ -87,6 +114,17 @@
             <label>UnitCostPrice<InputNumber @bind-Value="BatchForm.UnitCostPrice" /></label>
             <button class="primary-button" type="button" @onclick="AddBatchAsync" disabled="@IsBusy">Add Batch</button>
         </EditForm>
+        <div class="table-shell stock-batch-list">
+            @foreach (var batch in SelectedBatches)
+            {
+                <div class="@BatchRowClass(batch)">
+                    <span>@batch.BatchNumber</span>
+                    <span>@batch.QuantityOnHand units</span>
+                    <span>@batch.ExpiryDate</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SelectBatch(batch)">Adjust</button>
+                </div>
+            }
+        </div>
     </article>
 
     <article class="panel">
@@ -101,6 +139,78 @@
     </article>
 </section>
 
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Stock Adjustment</h2>
+            <span class="status-pill amber">@SelectedBatch?.BatchNumber</span>
+        </div>
+        <EditForm Model="AdjustmentForm" class="entity-form">
+            <label>
+                AdjustmentType
+                <InputSelect @bind-Value="AdjustmentForm.AdjustmentType">
+                    <option>Increase</option>
+                    <option>Decrease</option>
+                    <option>Correction</option>
+                    <option>Damaged</option>
+                    <option>Expired</option>
+                </InputSelect>
+            </label>
+            <label>QuantityDelta<InputNumber @bind-Value="AdjustmentForm.QuantityDelta" /></label>
+            <label>Reason<InputTextArea @bind-Value="AdjustmentForm.Reason" /></label>
+            <button class="primary-button" type="button" @onclick="AdjustBatchAsync" disabled="@IsBusy">Apply Adjustment</button>
+        </EditForm>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>FIFO Dispense</h2>
+            <span class="status-pill green">@SelectedMedicine?.BrandName</span>
+        </div>
+        <EditForm Model="FifoForm" class="entity-form">
+            <label>QuantityRequired<InputNumber @bind-Value="FifoForm.QuantityRequired" /></label>
+            <label>Reason<InputText @bind-Value="FifoForm.Reason" /></label>
+            <div class="header-actions">
+                <button class="secondary-button" type="button" @onclick="PreviewFifoAsync" disabled="@IsBusy">Preview FIFO</button>
+                <button class="primary-button" type="button" @onclick="DispenseFifoAsync" disabled="@IsBusy">Dispense FIFO</button>
+            </div>
+        </EditForm>
+        @if (FifoSelection is not null)
+        {
+            <div class="table-shell">
+                @foreach (var item in FifoSelection.Batches)
+                {
+                    <div class="table-row fifo-row">
+                        <span>@item.BatchNumber</span>
+                        <span>@item.QuantitySelected / @item.QuantityAvailable</span>
+                        <span>@item.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                    </div>
+                }
+            </div>
+        }
+    </article>
+</section>
+
+@if (StockDashboard?.OpenAlerts.Count > 0)
+{
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Stock Alerts</h2>
+            <span class="status-pill amber">@StockDashboard.OpenAlerts.Count</span>
+        </div>
+        <div class="table-shell">
+            @foreach (var alert in StockDashboard.OpenAlerts.Take(12))
+            {
+                <div class="table-row stock-alert-row">
+                    <span>@alert.MedicineName</span>
+                    <span>@alert.AlertType / @alert.Severity</span>
+                    <span>@alert.Message</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
 @if (!string.IsNullOrWhiteSpace(StatusMessage))
 {
     <p class="@StatusClass">@StatusMessage</p>
@@ -109,11 +219,23 @@
 @code {
     private IReadOnlyList<MedicineModel> Medicines { get; set; } = [];
 
+    private PharmacyStockDashboardModel? StockDashboard { get; set; }
+
     private MedicineModel? SelectedMedicine { get; set; }
+
+    private IReadOnlyList<StockBatchModel> SelectedBatches { get; set; } = [];
+
+    private StockBatchModel? SelectedBatch { get; set; }
 
     private MedicineFormModel MedicineForm { get; set; } = new();
 
     private StockBatchFormModel BatchForm { get; set; } = new();
+
+    private StockAdjustmentFormModel AdjustmentForm { get; set; } = new();
+
+    private FifoDispenseFormModel FifoForm { get; set; } = new();
+
+    private FifoBatchSelectionModel? FifoSelection { get; set; }
 
     private string Search { get; set; } = string.Empty;
 
@@ -129,7 +251,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadStockDashboardAsync();
         await LoadMedicinesAsync();
+    }
+
+    private async Task LoadStockDashboardAsync()
+    {
+        var result = await ApiClient.GetAsync<PharmacyStockDashboardModel>("api/v1/pharmacy/stock/dashboard");
+        if (result?.Success == true && result.Data is not null)
+        {
+            StockDashboard = result.Data;
+        }
     }
 
     private async Task LoadMedicinesAsync()
@@ -141,6 +273,7 @@
         if (result?.Success == true && result.Data is not null)
         {
             Medicines = result.Data;
+            await LoadStockDashboardAsync();
             SetStatus("Medicines loaded.", "tone-green");
             return;
         }
@@ -184,6 +317,7 @@
             BatchForm = new StockBatchFormModel();
             ExpiryDateText = BatchForm.ExpiryDate.ToString("yyyy-MM-dd");
             await LoadMedicinesAsync();
+            await LoadSelectedBatchesAsync();
             SetStatus("Stock batch added.", "tone-green");
             return;
         }
@@ -214,11 +348,138 @@
         SetStatus(result?.Error?.Message ?? "CSV import failed.", "tone-amber");
     }
 
-    private void SelectMedicine(MedicineModel medicine)
+    private async Task SelectMedicineAsync(MedicineModel medicine)
     {
         SelectedMedicine = medicine;
         BatchForm.UnitCostPrice = medicine.UnitCostPrice;
+        FifoSelection = null;
+        SelectedBatch = null;
+        await LoadSelectedBatchesAsync();
         SetStatus($"{medicine.BrandName} selected.", "tone-blue");
+    }
+
+    private async Task LoadSelectedBatchesAsync()
+    {
+        if (SelectedMedicine is null)
+        {
+            SelectedBatches = [];
+            return;
+        }
+
+        var result = await ApiClient.GetAsync<IReadOnlyList<StockBatchModel>>($"api/v1/pharmacy/medicines/{SelectedMedicine.Id}/stock-batches");
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedBatches = result.Data;
+        }
+    }
+
+    private void SelectBatch(StockBatchModel batch)
+    {
+        SelectedBatch = batch;
+        AdjustmentForm = new StockAdjustmentFormModel();
+        SetStatus($"{batch.BatchNumber} selected for adjustment.", "tone-blue");
+    }
+
+    private async Task AdjustBatchAsync()
+    {
+        if (SelectedBatch is null)
+        {
+            SetStatus("Select a stock batch first.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<StockAdjustmentFormModel, StockAdjustmentModel>(
+            $"api/v1/pharmacy/stock-batches/{SelectedBatch.Id}/adjustments",
+            AdjustmentForm);
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            AdjustmentForm = new StockAdjustmentFormModel();
+            await LoadMedicinesAsync();
+            await LoadSelectedBatchesAsync();
+            SetStatus("Stock adjustment applied.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Stock adjustment failed.", "tone-amber");
+    }
+
+    private async Task PreviewFifoAsync()
+    {
+        if (SelectedMedicine is null)
+        {
+            SetStatus("Select a medicine first.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<FifoBatchSelectionModel>(
+            $"api/v1/pharmacy/medicines/{SelectedMedicine.Id}/fifo-selection?quantityRequired={FifoForm.QuantityRequired}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            FifoSelection = result.Data;
+            SetStatus(result.Data.IsFulfillable ? "FIFO selection ready." : "FIFO selection has insufficient stock.", result.Data.IsFulfillable ? "tone-green" : "tone-amber");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "FIFO preview failed.", "tone-amber");
+    }
+
+    private async Task DispenseFifoAsync()
+    {
+        if (SelectedMedicine is null)
+        {
+            SetStatus("Select a medicine first.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<FifoDispenseFormModel, FifoDispenseModel>(
+            $"api/v1/pharmacy/medicines/{SelectedMedicine.Id}/fifo-dispense",
+            FifoForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            await LoadMedicinesAsync();
+            await LoadSelectedBatchesAsync();
+            FifoSelection = new FifoBatchSelectionModel(
+                result.Data.MedicineId,
+                result.Data.MedicineName,
+                result.Data.QuantityRequired,
+                result.Data.QuantityDispensed,
+                result.Data.QuantityDispensed == result.Data.QuantityRequired,
+                result.Data.Batches);
+            SetStatus("FIFO stock dispensed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "FIFO dispense failed.", "tone-amber");
+    }
+
+    private async Task RunAlertScanAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<IReadOnlyList<StockAlertModel>>("api/v1/pharmacy/stock/alerts/scan");
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            await LoadStockDashboardAsync();
+            SetStatus($"{result.Data?.Count ?? 0} stock alerts created.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Stock alert scan failed.", "tone-amber");
+    }
+
+    private string BatchRowClass(StockBatchModel batch)
+    {
+        return SelectedBatch?.Id == batch.Id ? "table-row stock-batch-row selected" : "table-row stock-batch-row";
     }
 
     private void OnManufacturedDateChanged(ChangeEventArgs args)

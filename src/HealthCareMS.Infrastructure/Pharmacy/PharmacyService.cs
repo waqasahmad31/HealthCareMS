@@ -258,10 +258,238 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             medicines.Select(Map).ToList()));
     }
 
+    public async Task<Result<PharmacyStockDashboardResponse>> GetStockDashboardAsync(CancellationToken cancellationToken)
+    {
+        var medicines = await MedicineQuery()
+            .OrderBy(x => x.BrandName)
+            .Take(300)
+            .ToListAsync(cancellationToken);
+
+        var lowStock = medicines
+            .Where(x => x.StockBatches.Sum(batch => batch.QuantityOnHand) <= x.ReorderLevel)
+            .Select(Map)
+            .ToList();
+
+        var openAlerts = await AlertQuery()
+            .Where(x => x.Status == StockAlertStatus.Open)
+            .OrderByDescending(x => x.DetectedAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        var expiryAlerts = openAlerts
+            .Where(x => x.AlertType is StockAlertType.Expiry30Days or StockAlertType.Expiry60Days or StockAlertType.Expiry90Days)
+            .Select(Map)
+            .ToList();
+
+        return Result<PharmacyStockDashboardResponse>.Success(new PharmacyStockDashboardResponse(
+            medicines.Count,
+            lowStock.Count,
+            expiryAlerts.Count,
+            lowStock,
+            expiryAlerts,
+            openAlerts.Select(Map).ToList()));
+    }
+
+    public async Task<Result<IReadOnlyList<StockBatchResponse>>> GetStockBatchesAsync(
+        Guid medicineId,
+        CancellationToken cancellationToken)
+    {
+        var medicineExists = await dbContext.Medicines.AnyAsync(x => x.Id == medicineId, cancellationToken);
+        if (!medicineExists)
+        {
+            return Result<IReadOnlyList<StockBatchResponse>>.Failure(new Error("MEDICINE_NOT_FOUND", "Medicine was not found."));
+        }
+
+        var batches = await dbContext.StockBatches
+            .Where(x => x.MedicineId == medicineId)
+            .OrderBy(x => x.ReceivedAt)
+            .ThenBy(x => x.ExpiryDate)
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<StockBatchResponse>>.Success(batches.Select(Map).ToList());
+    }
+
+    public async Task<Result<StockAdjustmentResponse>> AdjustStockBatchAsync(
+        Guid stockBatchId,
+        AdjustStockBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationErrors = ValidateAdjustment(request);
+        if (validationErrors.Count > 0)
+        {
+            return Result<StockAdjustmentResponse>.Failure(Error.Validation(validationErrors));
+        }
+
+        if (!Enum.TryParse<StockAdjustmentType>(request.AdjustmentType, ignoreCase: true, out var adjustmentType))
+        {
+            return Result<StockAdjustmentResponse>.Failure(new Error("STOCK_ADJUSTMENT_TYPE_INVALID", "AdjustmentType is invalid."));
+        }
+
+        var batch = await dbContext.StockBatches
+            .Include(x => x.Medicine)
+            .SingleOrDefaultAsync(x => x.Id == stockBatchId, cancellationToken);
+
+        if (batch is null)
+        {
+            return Result<StockAdjustmentResponse>.Failure(new Error("STOCK_BATCH_NOT_FOUND", "Stock batch was not found."));
+        }
+
+        var result = ApplyAdjustment(batch, request.QuantityDelta, adjustmentType, request.Reason);
+        if (result.IsFailure)
+        {
+            return Result<StockAdjustmentResponse>.Failure(result.Error);
+        }
+
+        dbContext.StockAdjustments.Add(result.Value);
+        await ResolveLowStockIfRecoveredAsync(batch.MedicineId, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<StockAdjustmentResponse>.Success(Map(result.Value));
+    }
+
+    public async Task<Result<FifoBatchSelectionResponse>> GetFifoBatchSelectionAsync(
+        Guid medicineId,
+        int quantityRequired,
+        CancellationToken cancellationToken)
+    {
+        if (quantityRequired <= 0)
+        {
+            return Result<FifoBatchSelectionResponse>.Failure(new Error("FIFO_QUANTITY_INVALID", "QuantityRequired must be greater than zero."));
+        }
+
+        var medicine = await MedicineQuery().SingleOrDefaultAsync(x => x.Id == medicineId, cancellationToken);
+        if (medicine is null)
+        {
+            return Result<FifoBatchSelectionResponse>.Failure(new Error("MEDICINE_NOT_FOUND", "Medicine was not found."));
+        }
+
+        var selection = BuildFifoSelection(medicine, quantityRequired);
+        return Result<FifoBatchSelectionResponse>.Success(selection);
+    }
+
+    public async Task<Result<FifoDispenseResponse>> DispenseFifoAsync(
+        Guid medicineId,
+        FifoDispenseRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.QuantityRequired <= 0)
+        {
+            return Result<FifoDispenseResponse>.Failure(new Error("FIFO_QUANTITY_INVALID", "QuantityRequired must be greater than zero."));
+        }
+
+        var medicine = await MedicineQuery().SingleOrDefaultAsync(x => x.Id == medicineId, cancellationToken);
+        if (medicine is null)
+        {
+            return Result<FifoDispenseResponse>.Failure(new Error("MEDICINE_NOT_FOUND", "Medicine was not found."));
+        }
+
+        var selection = BuildFifoSelection(medicine, request.QuantityRequired);
+        if (!selection.IsFulfillable)
+        {
+            return Result<FifoDispenseResponse>.Failure(new Error("FIFO_STOCK_INSUFFICIENT", "Not enough stock is available for FIFO dispense."));
+        }
+
+        var adjustments = new List<StockAdjustment>();
+        foreach (var item in selection.Batches)
+        {
+            var batch = medicine.StockBatches.Single(x => x.Id == item.StockBatchId);
+            var adjustment = ApplyAdjustment(
+                batch,
+                -item.QuantitySelected,
+                StockAdjustmentType.Dispense,
+                Normalize(request.Reason) ?? "FIFO dispense");
+            if (adjustment.IsFailure)
+            {
+                return Result<FifoDispenseResponse>.Failure(adjustment.Error);
+            }
+
+            adjustments.Add(adjustment.Value);
+        }
+
+        dbContext.StockAdjustments.AddRange(adjustments);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<FifoDispenseResponse>.Success(new FifoDispenseResponse(
+            medicine.Id,
+            medicine.BrandName,
+            request.QuantityRequired,
+            selection.QuantitySelected,
+            selection.Batches,
+            adjustments.Select(Map).ToList()));
+    }
+
+    public async Task<Result<IReadOnlyList<StockAlertResponse>>> RunStockAlertScanAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var today = DateOnly.FromDateTime(now.UtcDateTime.Date);
+        var medicines = await MedicineQuery().ToListAsync(cancellationToken);
+        var created = new List<StockAlert>();
+
+        foreach (var medicine in medicines)
+        {
+            var stockOnHand = medicine.StockBatches.Sum(x => x.QuantityOnHand);
+            if (stockOnHand <= medicine.ReorderLevel)
+            {
+                var alert = await EnsureAlertAsync(
+                    medicine,
+                    stockBatch: null,
+                    StockAlertType.LowStock,
+                    stockOnHand <= 0 ? "Critical" : "Warning",
+                    $"{medicine.BrandName} stock is {stockOnHand}, below reorder level {medicine.ReorderLevel}.",
+                    stockOnHand,
+                    medicine.ReorderLevel,
+                    expiryDate: null,
+                    now,
+                    cancellationToken);
+                if (alert is not null)
+                {
+                    created.Add(alert);
+                }
+            }
+
+            foreach (var batch in medicine.StockBatches.Where(x => x.QuantityOnHand > 0))
+            {
+                var alertType = ResolveExpiryAlertType(today, batch.ExpiryDate);
+                if (alertType is null)
+                {
+                    continue;
+                }
+
+                var days = (batch.ExpiryDate.ToDateTime(TimeOnly.MinValue) - today.ToDateTime(TimeOnly.MinValue)).Days;
+                var alert = await EnsureAlertAsync(
+                    medicine,
+                    batch,
+                    alertType.Value,
+                    days <= 30 ? "Critical" : days <= 60 ? "Warning" : "Info",
+                    $"{medicine.BrandName} batch {batch.BatchNumber} expires in {days} days.",
+                    batch.QuantityOnHand,
+                    thresholdQuantity: null,
+                    batch.ExpiryDate,
+                    now,
+                    cancellationToken);
+                if (alert is not null)
+                {
+                    created.Add(alert);
+                }
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<IReadOnlyList<StockAlertResponse>>.Success(created.Select(Map).ToList());
+    }
+
     private IQueryable<Medicine> MedicineQuery()
     {
         return dbContext.Medicines
             .Include(x => x.StockBatches);
+    }
+
+    private IQueryable<StockAlert> AlertQuery()
+    {
+        return dbContext.StockAlerts
+            .Include(x => x.Medicine)
+            .Include(x => x.StockBatch);
     }
 
     private static List<ValidationError> ValidateMedicine(CreateMedicineRequest request)
@@ -328,6 +556,171 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         return errors;
     }
 
+    private static List<ValidationError> ValidateAdjustment(AdjustStockBatchRequest request)
+    {
+        var errors = new List<ValidationError>();
+        if (request.QuantityDelta == 0)
+        {
+            errors.Add(new ValidationError(nameof(request.QuantityDelta), "QuantityDelta cannot be zero."));
+        }
+
+        Required(request.AdjustmentType, nameof(request.AdjustmentType), errors);
+        Required(request.Reason, nameof(request.Reason), errors);
+        if (!string.IsNullOrWhiteSpace(request.Reason) && request.Reason.Trim().Length > 1000)
+        {
+            errors.Add(new ValidationError(nameof(request.Reason), "Reason cannot exceed 1000 characters."));
+        }
+
+        return errors;
+    }
+
+    private static FifoBatchSelectionResponse BuildFifoSelection(Medicine medicine, int quantityRequired)
+    {
+        var remaining = quantityRequired;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var selected = new List<FifoBatchSelectionItemResponse>();
+
+        foreach (var batch in medicine.StockBatches
+            .Where(x => x.QuantityOnHand > 0 && x.ExpiryDate > today)
+            .OrderBy(x => x.ReceivedAt)
+            .ThenBy(x => x.ExpiryDate)
+            .ThenBy(x => x.BatchNumber))
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+
+            var quantity = Math.Min(batch.QuantityOnHand, remaining);
+            selected.Add(new FifoBatchSelectionItemResponse(
+                batch.Id,
+                batch.BatchNumber,
+                batch.ReceivedAt,
+                batch.ExpiryDate,
+                batch.QuantityOnHand,
+                quantity));
+            remaining -= quantity;
+        }
+
+        var selectedQuantity = selected.Sum(x => x.QuantitySelected);
+        return new FifoBatchSelectionResponse(
+            medicine.Id,
+            medicine.BrandName,
+            quantityRequired,
+            selectedQuantity,
+            selectedQuantity == quantityRequired,
+            selected);
+    }
+
+    private static Result<StockAdjustment> ApplyAdjustment(
+        StockBatch batch,
+        int quantityDelta,
+        StockAdjustmentType adjustmentType,
+        string reason)
+    {
+        var previousQuantity = batch.QuantityOnHand;
+        var newQuantity = previousQuantity + quantityDelta;
+        if (newQuantity < 0)
+        {
+            return Result<StockAdjustment>.Failure(new Error("STOCK_QUANTITY_INVALID", "Stock adjustment cannot reduce quantity below zero."));
+        }
+
+        batch.QuantityOnHand = newQuantity;
+        return Result<StockAdjustment>.Success(new StockAdjustment
+        {
+            TenantId = batch.TenantId,
+            MedicineId = batch.MedicineId,
+            Medicine = batch.Medicine,
+            StockBatchId = batch.Id,
+            StockBatch = batch,
+            AdjustmentType = adjustmentType,
+            QuantityDelta = quantityDelta,
+            PreviousQuantity = previousQuantity,
+            NewQuantity = newQuantity,
+            Reason = reason.Trim(),
+            AdjustedAt = DateTimeOffset.UtcNow
+        });
+    }
+
+    private async Task ResolveLowStockIfRecoveredAsync(Guid medicineId, CancellationToken cancellationToken)
+    {
+        var medicine = await MedicineQuery().SingleAsync(x => x.Id == medicineId, cancellationToken);
+        var stockOnHand = medicine.StockBatches.Sum(x => x.QuantityOnHand);
+        if (stockOnHand <= medicine.ReorderLevel)
+        {
+            return;
+        }
+
+        var openAlerts = await dbContext.StockAlerts
+            .Where(x => x.MedicineId == medicineId
+                && x.AlertType == StockAlertType.LowStock
+                && x.Status == StockAlertStatus.Open)
+            .ToListAsync(cancellationToken);
+
+        foreach (var alert in openAlerts)
+        {
+            alert.Status = StockAlertStatus.Resolved;
+            alert.ResolvedAt = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private async Task<StockAlert?> EnsureAlertAsync(
+        Medicine medicine,
+        StockBatch? stockBatch,
+        StockAlertType alertType,
+        string severity,
+        string message,
+        int? quantityOnHand,
+        int? thresholdQuantity,
+        DateOnly? expiryDate,
+        DateTimeOffset detectedAt,
+        CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.StockAlerts.AnyAsync(x =>
+            x.MedicineId == medicine.Id
+            && x.StockBatchId == (stockBatch == null ? null : stockBatch.Id)
+            && x.AlertType == alertType
+            && x.Status == StockAlertStatus.Open,
+            cancellationToken);
+        if (exists)
+        {
+            return null;
+        }
+
+        var alert = new StockAlert
+        {
+            TenantId = medicine.TenantId,
+            MedicineId = medicine.Id,
+            Medicine = medicine,
+            StockBatchId = stockBatch?.Id,
+            StockBatch = stockBatch,
+            AlertType = alertType,
+            Status = StockAlertStatus.Open,
+            Severity = severity,
+            Message = message,
+            QuantityOnHand = quantityOnHand,
+            ThresholdQuantity = thresholdQuantity,
+            ExpiryDate = expiryDate,
+            DetectedAt = detectedAt
+        };
+
+        dbContext.StockAlerts.Add(alert);
+        return alert;
+    }
+
+    private static StockAlertType? ResolveExpiryAlertType(DateOnly today, DateOnly expiryDate)
+    {
+        var days = (expiryDate.ToDateTime(TimeOnly.MinValue) - today.ToDateTime(TimeOnly.MinValue)).Days;
+        return days switch
+        {
+            < 0 => null,
+            <= 30 => StockAlertType.Expiry30Days,
+            <= 60 => StockAlertType.Expiry60Days,
+            <= 90 => StockAlertType.Expiry90Days,
+            _ => null
+        };
+    }
+
     private static MedicineResponse Map(Medicine medicine)
     {
         var batches = medicine.StockBatches
@@ -367,6 +760,39 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             batch.QuantityOnHand,
             batch.UnitCostPrice,
             batch.ReceivedAt);
+    }
+
+    private static StockAdjustmentResponse Map(StockAdjustment adjustment)
+    {
+        return new StockAdjustmentResponse(
+            adjustment.Id,
+            adjustment.MedicineId,
+            adjustment.StockBatchId,
+            adjustment.StockBatch.BatchNumber,
+            adjustment.AdjustmentType.ToString(),
+            adjustment.QuantityDelta,
+            adjustment.PreviousQuantity,
+            adjustment.NewQuantity,
+            adjustment.Reason,
+            adjustment.AdjustedAt);
+    }
+
+    private static StockAlertResponse Map(StockAlert alert)
+    {
+        return new StockAlertResponse(
+            alert.Id,
+            alert.MedicineId,
+            alert.Medicine.BrandName,
+            alert.StockBatchId,
+            alert.StockBatch?.BatchNumber,
+            alert.AlertType.ToString(),
+            alert.Status.ToString(),
+            alert.Severity,
+            alert.Message,
+            alert.ThresholdQuantity,
+            alert.QuantityOnHand,
+            alert.ExpiryDate,
+            alert.DetectedAt);
     }
 
     private static IReadOnlyList<string> SplitCsvLine(string line)

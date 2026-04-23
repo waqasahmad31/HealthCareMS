@@ -21,6 +21,10 @@ public sealed class Doctor : BaseEntity
 
     public decimal ConsultationFee { get; set; }
 
+    public decimal AverageRating { get; set; }
+
+    public int RatingCount { get; set; }
+
     public bool IsVerified { get; set; }
 
     public bool IsActive { get; set; } = true;
@@ -30,4 +34,6 @@ public sealed class Doctor : BaseEntity
     public Tenant? Tenant { get; set; }
 
     public ICollection<DoctorSchedule> Schedules { get; set; } = new List<DoctorSchedule>();
+
+    public ICollection<DoctorReview> Reviews { get; set; } = new List<DoctorReview>();
 }

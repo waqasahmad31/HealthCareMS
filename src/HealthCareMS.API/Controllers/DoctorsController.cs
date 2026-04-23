@@ -7,7 +7,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace HealthCareMS.API.Controllers;
 
 [Route("api/v1/doctors")]
-public sealed class DoctorsController(IDoctorService doctorService) : ApiControllerBase
+public sealed class DoctorsController(
+    IDoctorService doctorService,
+    IDoctorReviewService doctorReviewService) : ApiControllerBase
 {
     [HttpPost("profile")]
     [RequirePermission(PermissionKeys.Doctor.Verify)]
@@ -35,6 +37,33 @@ public sealed class DoctorsController(IDoctorService doctorService) : ApiControl
     {
         var result = await doctorService.GetByIdAsync(id, cancellationToken);
         return FromResult(result);
+    }
+
+    [AllowAnonymous]
+    [HttpGet("{id:guid}/reviews")]
+    public async Task<IActionResult> GetReviews(Guid id, CancellationToken cancellationToken)
+    {
+        var reviews = await doctorReviewService.GetDoctorReviewsAsync(id, cancellationToken);
+        return OkEnvelope(reviews);
+    }
+
+    [AllowAnonymous]
+    [HttpGet("{id:guid}/rating")]
+    public async Task<IActionResult> GetRating(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await doctorReviewService.GetDoctorRatingSummaryAsync(id, cancellationToken);
+        return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpPost("reviews/appointments/{appointmentId:guid}")]
+    public async Task<IActionResult> SubmitReview(
+        Guid appointmentId,
+        SubmitDoctorReviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await doctorReviewService.SubmitReviewAsync(appointmentId, request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
     }
 
     [HttpPut("{id:guid}/profile")]

@@ -94,3 +94,75 @@ public sealed class SupplierConfiguration : IEntityTypeConfiguration<Supplier>
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public sealed class StockAdjustmentConfiguration : IEntityTypeConfiguration<StockAdjustment>
+{
+    public void Configure(EntityTypeBuilder<StockAdjustment> builder)
+    {
+        builder.ToTable("StockAdjustments", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.AdjustmentType).HasConversion<string>().HasMaxLength(30).IsRequired();
+        builder.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+
+        builder.HasIndex(x => x.TenantId);
+        builder.HasIndex(x => new { x.MedicineId, x.AdjustedAt });
+        builder.HasIndex(x => new { x.StockBatchId, x.AdjustedAt });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Tenant)
+            .WithMany()
+            .HasForeignKey(x => x.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Medicine)
+            .WithMany()
+            .HasForeignKey(x => x.MedicineId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.StockBatch)
+            .WithMany()
+            .HasForeignKey(x => x.StockBatchId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class StockAlertConfiguration : IEntityTypeConfiguration<StockAlert>
+{
+    public void Configure(EntityTypeBuilder<StockAlert> builder)
+    {
+        builder.ToTable("StockAlerts", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.AlertType).HasConversion<string>().HasMaxLength(30).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.Severity).HasMaxLength(30).IsRequired();
+        builder.Property(x => x.Message).HasMaxLength(1000).IsRequired();
+
+        builder.HasIndex(x => x.TenantId);
+        builder.HasIndex(x => new { x.MedicineId, x.AlertType, x.Status });
+        builder.HasIndex(x => new { x.StockBatchId, x.AlertType, x.Status });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Tenant)
+            .WithMany()
+            .HasForeignKey(x => x.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Medicine)
+            .WithMany()
+            .HasForeignKey(x => x.MedicineId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.StockBatch)
+            .WithMany()
+            .HasForeignKey(x => x.StockBatchId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}

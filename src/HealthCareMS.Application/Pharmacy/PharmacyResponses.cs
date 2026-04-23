@@ -33,3 +33,62 @@ public sealed record StockBatchResponse(
 public sealed record MedicineImportResponse(
     int ImportedCount,
     IReadOnlyList<MedicineResponse> Medicines);
+
+public sealed record StockAdjustmentResponse(
+    Guid Id,
+    Guid MedicineId,
+    Guid StockBatchId,
+    string BatchNumber,
+    string AdjustmentType,
+    int QuantityDelta,
+    int PreviousQuantity,
+    int NewQuantity,
+    string Reason,
+    DateTimeOffset AdjustedAt);
+
+public sealed record StockAlertResponse(
+    Guid Id,
+    Guid MedicineId,
+    string MedicineName,
+    Guid? StockBatchId,
+    string? BatchNumber,
+    string AlertType,
+    string Status,
+    string Severity,
+    string Message,
+    int? ThresholdQuantity,
+    int? QuantityOnHand,
+    DateOnly? ExpiryDate,
+    DateTimeOffset DetectedAt);
+
+public sealed record FifoBatchSelectionItemResponse(
+    Guid StockBatchId,
+    string BatchNumber,
+    DateTimeOffset ReceivedAt,
+    DateOnly ExpiryDate,
+    int QuantityAvailable,
+    int QuantitySelected);
+
+public sealed record FifoBatchSelectionResponse(
+    Guid MedicineId,
+    string MedicineName,
+    int QuantityRequired,
+    int QuantitySelected,
+    bool IsFulfillable,
+    IReadOnlyList<FifoBatchSelectionItemResponse> Batches);
+
+public sealed record FifoDispenseResponse(
+    Guid MedicineId,
+    string MedicineName,
+    int QuantityRequired,
+    int QuantityDispensed,
+    IReadOnlyList<FifoBatchSelectionItemResponse> Batches,
+    IReadOnlyList<StockAdjustmentResponse> Adjustments);
+
+public sealed record PharmacyStockDashboardResponse(
+    int TotalMedicines,
+    int LowStockCount,
+    int ExpiryAlertCount,
+    IReadOnlyList<MedicineResponse> LowStockMedicines,
+    IReadOnlyList<StockAlertResponse> ExpiryAlerts,
+    IReadOnlyList<StockAlertResponse> OpenAlerts);

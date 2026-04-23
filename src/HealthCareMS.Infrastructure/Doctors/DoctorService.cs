@@ -300,6 +300,8 @@ public sealed class DoctorService(
             doctor.Biography,
             doctor.City,
             doctor.ConsultationFee,
+            doctor.AverageRating,
+            doctor.RatingCount,
             doctor.IsVerified,
             doctor.IsActive,
             doctor.CreatedAt,

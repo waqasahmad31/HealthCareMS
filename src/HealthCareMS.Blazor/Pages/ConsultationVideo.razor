@@ -10,7 +10,7 @@
 
 <PageTitle>Video Consultation</PageTitle>
 
-<section class="video-console">
+<section class="@VideoConsoleClass">
     <div class="video-stage">
         <div class="remote-video">
             <span>@RemoteLabel</span>
@@ -22,11 +22,15 @@
         </div>
     </div>
 
-    <aside class="video-side-panel">
+    <aside class="@VideoSidePanelClass">
+        <div class="mobile-video-toolbar">
+            <button class="secondary-button small-button" type="button" @onclick="ToggleBandwidthMode">@BandwidthLabel</button>
+            <button class="secondary-button small-button" type="button" @onclick="ToggleMobilePanel">@PanelLabel</button>
+        </div>
         <div class="consultation-tabs">
-            <button class="@TabClass("Session")" type="button" @onclick='() => ActiveTab = "Session"'>Session</button>
-            <button class="@TabClass("Chat")" type="button" @onclick='() => ActiveTab = "Chat"'>Chat</button>
-            <button class="@TabClass("Vitals")" type="button" @onclick='() => ActiveTab = "Vitals"'>Vitals</button>
+            <button class="@TabClass("Session")" type="button" @onclick='() => SetActiveTabAsync("Session")'>Session</button>
+            <button class="@TabClass("Chat")" type="button" @onclick='() => SetActiveTabAsync("Chat")'>Chat</button>
+            <button class="@TabClass("Vitals")" type="button" @onclick='() => SetActiveTabAsync("Vitals")'>Vitals</button>
         </div>
 
         @if (ActiveTab == "Session")
@@ -163,6 +167,7 @@
     <button class="secondary-button" type="button" @onclick="ToggleMute">@MuteLabel</button>
     <button class="secondary-button" type="button" @onclick="ToggleCamera">@CameraLabel</button>
     <button class="secondary-button" type="button" @onclick="ShareScreenAsync">Share Screen</button>
+    <button class="secondary-button" type="button" @onclick="ToggleMobilePanel">@PanelLabel</button>
     <button class="primary-button" type="button" @onclick="ReloadSessionAsync" disabled="@IsBusy">Refresh</button>
 </section>
 
@@ -205,6 +210,14 @@
 
     private bool IsCameraOff { get; set; }
 
+    private bool IsLowBandwidthMode { get; set; }
+
+    private bool IsMobilePanelOpen { get; set; } = true;
+
+    private bool ChatInitialized { get; set; }
+
+    private bool VitalsLoaded { get; set; }
+
     private bool PreviewStarted { get; set; }
 
     private string? StatusMessage { get; set; }
@@ -225,15 +238,26 @@
 
     private string CameraLabel => IsCameraOff ? "Camera On" : "Camera Off";
 
+    private string BandwidthLabel => IsLowBandwidthMode ? "Standard Data" : "Data Saver";
+
+    private string PanelLabel => IsMobilePanelOpen ? "Hide Panel" : "Show Panel";
+
+    private string VideoConsoleClass => IsLowBandwidthMode ? "video-console low-bandwidth" : "video-console";
+
+    private string VideoSidePanelClass => IsMobilePanelOpen ? "video-side-panel open" : "video-side-panel closed";
+
     protected override async Task OnInitializedAsync()
     {
         ParticipantType = GetRoleFromQuery();
+        IsLowBandwidthMode = IsLowBandwidthFromQuery();
         await EnsureHubAsync();
-        await EnsureChatHubAsync();
         await ReloadSessionAsync();
         await JoinAsync();
-        await LoadChatAsync();
-        await LoadVitalsAsync();
+        if (!IsLowBandwidthMode)
+        {
+            await EnsureChatReadyAsync();
+            await LoadVitalsAsync();
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -241,7 +265,10 @@
         if (!PreviewStarted)
         {
             PreviewStarted = true;
-            var result = await JsRuntime.InvokeAsync<MediaPreviewResult>("HealthCareMSMedia.startPreview", "consolePreview");
+            var result = await JsRuntime.InvokeAsync<MediaPreviewResult>(
+                "HealthCareMSMedia.startPreview",
+                "consolePreview",
+                new { lowBandwidth = IsLowBandwidthMode });
             SetStatus(result.Message, result.Success ? "tone-green" : "tone-amber");
             StateHasChanged();
         }
@@ -266,7 +293,10 @@
             }
 
             SetStatus("Session loaded.", "tone-green");
-            await LoadVitalsAsync();
+            if (!IsLowBandwidthMode || ActiveTab == "Vitals")
+            {
+                await LoadVitalsAsync();
+            }
             return;
         }
 
@@ -285,8 +315,14 @@
         {
             JoinResult = result.Data;
             Session = result.Data.Session;
-            await MarkChatReadAsync();
-            await LoadVitalsAsync();
+            if (ChatInitialized)
+            {
+                await MarkChatReadAsync();
+            }
+            if (!IsLowBandwidthMode || ActiveTab == "Vitals")
+            {
+                await LoadVitalsAsync();
+            }
             SetStatus($"{ParticipantType} joined video session.", "tone-green");
             return;
         }
@@ -312,6 +348,11 @@
 
     private async Task EnsureChatHubAsync()
     {
+        if (ChatHubConnection is not null)
+        {
+            return;
+        }
+
         ChatHubConnection = new HubConnectionBuilder()
             .WithUrl(ApiEndpoints.ConsultationChatHubUrl)
             .WithAutomaticReconnect()
@@ -339,6 +380,18 @@
 
         await ChatHubConnection.StartAsync();
         await ChatHubConnection.InvokeAsync("JoinSession", SessionId);
+    }
+
+    private async Task EnsureChatReadyAsync()
+    {
+        if (ChatInitialized)
+        {
+            return;
+        }
+
+        await EnsureChatHubAsync();
+        await LoadChatAsync();
+        ChatInitialized = true;
     }
 
     private async Task LoadChatAsync()
@@ -370,6 +423,8 @@
         {
             VitalsTrends = trends.Data;
         }
+
+        VitalsLoaded = true;
     }
 
     private async Task RecordVitalsAsync()
@@ -415,6 +470,7 @@
         }
 
         IsBusy = true;
+        await EnsureChatReadyAsync();
         var result = await ApiClient.PostAsync<SendChatMessageModel, ChatMessageModel>(
             $"api/v1/consultations/sessions/{SessionId}/chat/messages",
             new SendChatMessageModel
@@ -438,6 +494,7 @@
 
     private async Task UploadAttachmentAsync(InputFileChangeEventArgs args)
     {
+        await EnsureChatReadyAsync();
         var file = args.File;
         await using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
         using var content = new MultipartFormDataContent();
@@ -465,6 +522,11 @@
 
     private async Task MarkChatReadAsync()
     {
+        if (!ChatInitialized)
+        {
+            return;
+        }
+
         var result = await ApiClient.PutAsync<MarkChatMessagesReadModel, IReadOnlyList<ChatMessageModel>>(
             $"api/v1/consultations/sessions/{SessionId}/chat/read",
             new MarkChatMessagesReadModel { ParticipantType = ParticipantType });
@@ -508,6 +570,17 @@
     {
         IsCameraOff = !IsCameraOff;
         SetStatus(IsCameraOff ? "Camera paused." : "Camera resumed.", "tone-muted");
+    }
+
+    private void ToggleBandwidthMode()
+    {
+        IsLowBandwidthMode = !IsLowBandwidthMode;
+        SetStatus(IsLowBandwidthMode ? "Data saver enabled." : "Standard data mode enabled.", "tone-blue");
+    }
+
+    private void ToggleMobilePanel()
+    {
+        IsMobilePanelOpen = !IsMobilePanelOpen;
     }
 
     private Task ShareScreenAsync()
@@ -595,6 +668,20 @@
         return ActiveTab == tab ? "tab-button active" : "tab-button";
     }
 
+    private async Task SetActiveTabAsync(string tab)
+    {
+        ActiveTab = tab;
+        if (tab == "Chat")
+        {
+            await EnsureChatReadyAsync();
+            await MarkChatReadAsync();
+        }
+        else if (tab == "Vitals" && !VitalsLoaded)
+        {
+            await LoadVitalsAsync();
+        }
+    }
+
     private string GetRoleFromQuery()
     {
         var query = new Uri(NavigationManagerUri()).Query.TrimStart('?');
@@ -610,6 +697,32 @@
         }
 
         return "Patient";
+    }
+
+    private bool IsLowBandwidthFromQuery()
+    {
+        var query = new Uri(NavigationManagerUri()).Query.TrimStart('?');
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length != 2)
+            {
+                continue;
+            }
+
+            var key = Uri.UnescapeDataString(parts[0]);
+            var value = Uri.UnescapeDataString(parts[1]);
+            if ((string.Equals(key, "network", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(value, "3g", StringComparison.OrdinalIgnoreCase))
+                || (string.Equals(key, "lowBandwidth", StringComparison.OrdinalIgnoreCase)
+                    && bool.TryParse(value, out var enabled)
+                    && enabled))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     [Inject]

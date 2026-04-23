@@ -16,6 +16,7 @@ public sealed class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
         builder.Property(x => x.Qualification).HasMaxLength(300);
         builder.Property(x => x.City).HasMaxLength(100).IsRequired();
         builder.Property(x => x.ConsultationFee).HasPrecision(10, 2);
+        builder.Property(x => x.AverageRating).HasPrecision(3, 2);
 
         builder.HasIndex(x => x.UserId).IsUnique();
         builder.HasIndex(x => x.PmdcRegistrationNumber).IsUnique();
@@ -35,6 +36,41 @@ public sealed class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
             .WithMany()
             .HasForeignKey(x => x.TenantId)
             .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class DoctorReviewConfiguration : IEntityTypeConfiguration<DoctorReview>
+{
+    public void Configure(EntityTypeBuilder<DoctorReview> builder)
+    {
+        builder.ToTable("DoctorReviews", DatabaseSchemas.Doctor);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.ReviewText).HasMaxLength(1000);
+        builder.Property(x => x.Rating).IsRequired();
+
+        builder.HasIndex(x => x.AppointmentId).IsUnique();
+        builder.HasIndex(x => new { x.DoctorId, x.ReviewedAt });
+        builder.HasIndex(x => x.PatientId);
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Appointment)
+            .WithMany()
+            .HasForeignKey(x => x.AppointmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Patient)
+            .WithMany()
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Doctor)
+            .WithMany(x => x.Reviews)
+            .HasForeignKey(x => x.DoctorId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
 

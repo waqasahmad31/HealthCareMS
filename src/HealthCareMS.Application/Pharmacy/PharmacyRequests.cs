@@ -38,3 +38,12 @@ public sealed record CreateStockBatchRequest(
     decimal UnitCostPrice);
 
 public sealed record ImportMedicineCsvRequest(Guid? TenantId, string CsvContent);
+
+public sealed record AdjustStockBatchRequest(
+    int QuantityDelta,
+    string AdjustmentType,
+    string Reason);
+
+public sealed record FifoDispenseRequest(
+    int QuantityRequired,
+    string? Reason);
