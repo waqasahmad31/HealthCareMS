@@ -65,3 +65,27 @@ public sealed class MedicalHistoryConfiguration : IEntityTypeConfiguration<Medic
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+public sealed class PatientVitalConfiguration : IEntityTypeConfiguration<PatientVital>
+{
+    public void Configure(EntityTypeBuilder<PatientVital> builder)
+    {
+        builder.ToTable("PatientVitals", DatabaseSchemas.Patient);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.BloodSugarMgDl).HasPrecision(8, 2);
+        builder.Property(x => x.BloodSugarContext).HasMaxLength(40);
+        builder.Property(x => x.WeightKg).HasPrecision(8, 2);
+        builder.Property(x => x.TemperatureCelsius).HasPrecision(5, 2);
+        builder.Property(x => x.Notes).HasMaxLength(1000);
+
+        builder.HasIndex(x => new { x.PatientId, x.RecordedAt });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Patient)
+            .WithMany(x => x.Vitals)
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}

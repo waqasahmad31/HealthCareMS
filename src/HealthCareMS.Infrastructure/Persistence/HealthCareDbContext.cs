@@ -39,6 +39,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<MedicalHistory> MedicalHistories => Set<MedicalHistory>();
 
+    public DbSet<PatientVital> PatientVitals => Set<PatientVital>();
+
     public DbSet<Doctor> Doctors => Set<Doctor>();
 
     public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();

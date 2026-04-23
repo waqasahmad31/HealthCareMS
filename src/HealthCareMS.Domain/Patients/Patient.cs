@@ -55,4 +55,6 @@ public sealed class Patient : BaseEntity
     public ApplicationUser User { get; set; } = null!;
 
     public MedicalHistory? MedicalHistory { get; set; }
+
+    public ICollection<PatientVital> Vitals { get; set; } = new List<PatientVital>();
 }

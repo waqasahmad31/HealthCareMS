@@ -43,3 +43,14 @@ public sealed record UpdateMedicalHistoryRequest(
     string FamilyHistory,
     string SmokingStatus,
     string AlcoholStatus);
+
+public sealed record RecordVitalsRequest(
+    DateTimeOffset? RecordedAt,
+    int? SystolicBloodPressure,
+    int? DiastolicBloodPressure,
+    short? HeartRate,
+    decimal? BloodSugarMgDl,
+    string? BloodSugarContext,
+    decimal? WeightKg,
+    decimal? TemperatureCelsius,
+    string? Notes);

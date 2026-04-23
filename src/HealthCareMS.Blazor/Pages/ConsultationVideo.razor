@@ -26,6 +26,7 @@
         <div class="consultation-tabs">
             <button class="@TabClass("Session")" type="button" @onclick='() => ActiveTab = "Session"'>Session</button>
             <button class="@TabClass("Chat")" type="button" @onclick='() => ActiveTab = "Chat"'>Chat</button>
+            <button class="@TabClass("Vitals")" type="button" @onclick='() => ActiveTab = "Vitals"'>Vitals</button>
         </div>
 
         @if (ActiveTab == "Session")
@@ -64,7 +65,7 @@
                 </div>
             }
         }
-        else
+        else if (ActiveTab == "Chat")
         {
             <div class="panel-header">
                 <h2>Chat</h2>
@@ -107,6 +108,54 @@
                 <button class="primary-button" type="button" @onclick="SendChatAsync" disabled="@IsBusy">Send</button>
             </div>
         }
+        else
+        {
+            <div class="panel-header">
+                <h2>Vitals</h2>
+                <button class="secondary-button small-button" type="button" @onclick="LoadVitalsAsync" disabled="@IsBusy">Refresh</button>
+            </div>
+            @if (Session is null)
+            {
+                <div class="empty-state">Session vitals unavailable.</div>
+            }
+            else
+            {
+                <div class="vitals-compact-form">
+                    <input type="datetime-local" value="@VitalsRecordedAtText" @onchange="OnVitalsRecordedAtChanged" />
+                    <div class="vitals-two-column">
+                        <label>Systolic<InputNumber @bind-Value="VitalsForm.SystolicBloodPressure" /></label>
+                        <label>Diastolic<InputNumber @bind-Value="VitalsForm.DiastolicBloodPressure" /></label>
+                        <label>Sugar<InputNumber @bind-Value="VitalsForm.BloodSugarMgDl" /></label>
+                        <label>Temp C<InputNumber @bind-Value="VitalsForm.TemperatureCelsius" /></label>
+                        <label>Weight<InputNumber @bind-Value="VitalsForm.WeightKg" /></label>
+                        <label>Heart Rate<InputNumber @bind-Value="VitalsForm.HeartRate" /></label>
+                    </div>
+                    <button class="primary-button" type="button" @onclick="RecordVitalsAsync" disabled="@IsBusy">Record Vitals</button>
+                </div>
+
+                <div class="trend-grid compact-trends">
+                    @foreach (var trend in VitalsTrends)
+                    {
+                        <div class="trend-card">
+                            <span>@trend.Metric</span>
+                            <strong>@TrendValue(trend)</strong>
+                            <code>@TrendChange(trend)</code>
+                        </div>
+                    }
+                </div>
+
+                <div class="table-shell compact-vitals-history">
+                    @foreach (var vital in VitalsHistory.Take(6))
+                    {
+                        <div class="table-row vitals-video-row">
+                            <span>@vital.RecordedAt.LocalDateTime.ToString("HH:mm")</span>
+                            <span>@BloodPressure(vital)</span>
+                            <span>@Sugar(vital)</span>
+                        </div>
+                    }
+                </div>
+            }
+        }
     </aside>
 </section>
 
@@ -135,6 +184,14 @@
     private HubConnection? ChatHubConnection { get; set; }
 
     private List<ChatMessageModel> ChatMessages { get; set; } = [];
+
+    private IReadOnlyList<PatientVitalsModel> VitalsHistory { get; set; } = [];
+
+    private IReadOnlyList<VitalTrendModel> VitalsTrends { get; set; } = [];
+
+    private RecordVitalsModel VitalsForm { get; set; } = NewVitalsForm();
+
+    private string VitalsRecordedAtText { get; set; } = ToDateTimeLocal(DateTimeOffset.UtcNow);
 
     private string ParticipantType { get; set; } = "Patient";
 
@@ -176,6 +233,7 @@
         await ReloadSessionAsync();
         await JoinAsync();
         await LoadChatAsync();
+        await LoadVitalsAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -208,6 +266,7 @@
             }
 
             SetStatus("Session loaded.", "tone-green");
+            await LoadVitalsAsync();
             return;
         }
 
@@ -227,6 +286,7 @@
             JoinResult = result.Data;
             Session = result.Data.Session;
             await MarkChatReadAsync();
+            await LoadVitalsAsync();
             SetStatus($"{ParticipantType} joined video session.", "tone-green");
             return;
         }
@@ -289,6 +349,61 @@
             ChatMessages = result.Data.OrderBy(x => x.SentAt).ToList();
             await MarkChatReadAsync();
         }
+    }
+
+    private async Task LoadVitalsAsync()
+    {
+        if (Session is null)
+        {
+            return;
+        }
+
+        var history = await ApiClient.GetAsync<IReadOnlyList<PatientVitalsModel>>($"api/v1/patients/{Session.PatientId}/vitals");
+        var trends = await ApiClient.GetAsync<IReadOnlyList<VitalTrendModel>>($"api/v1/patients/{Session.PatientId}/vitals/trends");
+
+        if (history?.Success == true && history.Data is not null)
+        {
+            VitalsHistory = history.Data;
+        }
+
+        if (trends?.Success == true && trends.Data is not null)
+        {
+            VitalsTrends = trends.Data;
+        }
+    }
+
+    private async Task RecordVitalsAsync()
+    {
+        if (Session is null)
+        {
+            SetStatus("Session patient is unavailable.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<RecordVitalsModel, PatientVitalsModel>(
+            $"api/v1/patients/{Session.PatientId}/vitals",
+            VitalsForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            VitalsForm = NewVitalsForm();
+            VitalsRecordedAtText = ToDateTimeLocal(VitalsForm.RecordedAt ?? DateTimeOffset.UtcNow);
+            await LoadVitalsAsync();
+            SetStatus("Vitals recorded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Vitals recording failed.", "tone-amber");
+    }
+
+    private void OnVitalsRecordedAtChanged(ChangeEventArgs args)
+    {
+        VitalsRecordedAtText = args.Value?.ToString() ?? string.Empty;
+        VitalsForm.RecordedAt = DateTimeOffset.TryParse(VitalsRecordedAtText, out var parsed)
+            ? parsed
+            : DateTimeOffset.UtcNow;
     }
 
     private async Task SendChatAsync()
@@ -435,6 +550,44 @@
         return ParticipantType == "Patient"
             ? message.DoctorReadAt.HasValue ? "Read by doctor" : "Sent"
             : message.PatientReadAt.HasValue ? "Read by patient" : "Sent";
+    }
+
+    private static RecordVitalsModel NewVitalsForm()
+    {
+        return new RecordVitalsModel
+        {
+            RecordedAt = DateTimeOffset.UtcNow,
+            BloodSugarContext = "Random"
+        };
+    }
+
+    private static string ToDateTimeLocal(DateTimeOffset value)
+    {
+        return value.LocalDateTime.ToString("yyyy-MM-ddTHH:mm");
+    }
+
+    private static string TrendValue(VitalTrendModel trend)
+    {
+        return trend.LatestValue.HasValue ? $"{trend.LatestValue:0.##} {trend.Unit}" : "-";
+    }
+
+    private static string TrendChange(VitalTrendModel trend)
+    {
+        return trend.Change.HasValue ? $"{trend.Direction} {trend.Change:+0.##;-0.##;0}" : trend.Direction;
+    }
+
+    private static string BloodPressure(PatientVitalsModel vital)
+    {
+        return vital.SystolicBloodPressure.HasValue && vital.DiastolicBloodPressure.HasValue
+            ? $"{vital.SystolicBloodPressure}/{vital.DiastolicBloodPressure}"
+            : "-";
+    }
+
+    private static string Sugar(PatientVitalsModel vital)
+    {
+        return vital.BloodSugarMgDl.HasValue
+            ? $"{vital.BloodSugarMgDl:0.##}"
+            : "-";
     }
 
     private string TabClass(string tab)

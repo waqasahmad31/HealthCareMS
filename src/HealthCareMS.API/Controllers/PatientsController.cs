@@ -54,4 +54,35 @@ public sealed class PatientsController(IPatientService patientService) : ApiCont
         var result = await patientService.UpdateMedicalHistoryAsync(id, request, cancellationToken);
         return FromResult(result);
     }
+
+    [Authorize]
+    [HttpPost("{id:guid}/vitals")]
+    public async Task<IActionResult> RecordVitals(
+        Guid id,
+        RecordVitalsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await patientService.RecordVitalsAsync(id, request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [Authorize]
+    [HttpGet("{id:guid}/vitals")]
+    public async Task<IActionResult> GetVitalsHistory(
+        Guid id,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var result = await patientService.GetVitalsHistoryAsync(id, from, to, cancellationToken);
+        return FromResult(result);
+    }
+
+    [Authorize]
+    [HttpGet("{id:guid}/vitals/trends")]
+    public async Task<IActionResult> GetVitalsTrends(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await patientService.GetVitalsTrendsAsync(id, cancellationToken);
+        return FromResult(result);
+    }
 }

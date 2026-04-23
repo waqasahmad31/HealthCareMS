@@ -199,6 +199,106 @@ public sealed class PatientService(
         return Result<MedicalHistoryResponse>.Success(Map(patient.MedicalHistory));
     }
 
+    public async Task<Result<PatientVitalsResponse>> RecordVitalsAsync(
+        Guid patientId,
+        RecordVitalsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationErrors = ValidateVitals(request);
+        if (validationErrors.Count > 0)
+        {
+            return Result<PatientVitalsResponse>.Failure(Error.Validation(validationErrors));
+        }
+
+        var patientExists = await dbContext.Patients.AnyAsync(x => x.Id == patientId, cancellationToken);
+        if (!patientExists)
+        {
+            return Result<PatientVitalsResponse>.Failure(new Error("PATIENT_NOT_FOUND", "Patient was not found."));
+        }
+
+        var vital = new PatientVital
+        {
+            PatientId = patientId,
+            RecordedAt = (request.RecordedAt ?? DateTimeOffset.UtcNow).ToUniversalTime(),
+            SystolicBloodPressure = request.SystolicBloodPressure,
+            DiastolicBloodPressure = request.DiastolicBloodPressure,
+            HeartRate = request.HeartRate,
+            BloodSugarMgDl = request.BloodSugarMgDl,
+            BloodSugarContext = Normalize(request.BloodSugarContext),
+            WeightKg = request.WeightKg,
+            TemperatureCelsius = request.TemperatureCelsius,
+            Notes = Normalize(request.Notes)
+        };
+
+        dbContext.PatientVitals.Add(vital);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<PatientVitalsResponse>.Success(Map(vital));
+    }
+
+    public async Task<Result<IReadOnlyList<PatientVitalsResponse>>> GetVitalsHistoryAsync(
+        Guid patientId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var patientExists = await dbContext.Patients.AnyAsync(x => x.Id == patientId, cancellationToken);
+        if (!patientExists)
+        {
+            return Result<IReadOnlyList<PatientVitalsResponse>>.Failure(new Error("PATIENT_NOT_FOUND", "Patient was not found."));
+        }
+
+        var query = dbContext.PatientVitals.AsNoTracking().Where(x => x.PatientId == patientId);
+        if (from.HasValue)
+        {
+            var start = new DateTimeOffset(from.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            query = query.Where(x => x.RecordedAt >= start);
+        }
+
+        if (to.HasValue)
+        {
+            var end = new DateTimeOffset(to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            query = query.Where(x => x.RecordedAt < end);
+        }
+
+        var vitals = await query
+            .OrderByDescending(x => x.RecordedAt)
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<PatientVitalsResponse>>.Success(vitals.Select(Map).ToList());
+    }
+
+    public async Task<Result<IReadOnlyList<VitalTrendResponse>>> GetVitalsTrendsAsync(
+        Guid patientId,
+        CancellationToken cancellationToken)
+    {
+        var patientExists = await dbContext.Patients.AnyAsync(x => x.Id == patientId, cancellationToken);
+        if (!patientExists)
+        {
+            return Result<IReadOnlyList<VitalTrendResponse>>.Failure(new Error("PATIENT_NOT_FOUND", "Patient was not found."));
+        }
+
+        var vitals = await dbContext.PatientVitals
+            .AsNoTracking()
+            .Where(x => x.PatientId == patientId)
+            .OrderByDescending(x => x.RecordedAt)
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        var trends = new[]
+        {
+            BuildTrend(vitals, "Systolic BP", "mmHg", x => ToDecimal(x.SystolicBloodPressure)),
+            BuildTrend(vitals, "Diastolic BP", "mmHg", x => ToDecimal(x.DiastolicBloodPressure)),
+            BuildTrend(vitals, "Heart Rate", "bpm", x => ToDecimal(x.HeartRate)),
+            BuildTrend(vitals, "Blood Sugar", "mg/dL", x => x.BloodSugarMgDl),
+            BuildTrend(vitals, "Weight", "kg", x => x.WeightKg),
+            BuildTrend(vitals, "Temperature", "C", x => x.TemperatureCelsius)
+        };
+
+        return Result<IReadOnlyList<VitalTrendResponse>>.Success(trends);
+    }
+
     private IQueryable<Patient> PatientQuery()
     {
         return dbContext.Patients
@@ -249,6 +349,23 @@ public sealed class PatientService(
             medicalHistory.UpdatedAt);
     }
 
+    private static PatientVitalsResponse Map(PatientVital vital)
+    {
+        return new PatientVitalsResponse(
+            vital.Id,
+            vital.PatientId,
+            vital.RecordedAt,
+            vital.SystolicBloodPressure,
+            vital.DiastolicBloodPressure,
+            vital.HeartRate,
+            vital.BloodSugarMgDl,
+            vital.BloodSugarContext,
+            vital.WeightKg,
+            vital.TemperatureCelsius,
+            vital.Notes,
+            vital.CreatedAt);
+    }
+
     private static List<ValidationError> ValidateRegistration(RegisterPatientRequest request)
     {
         var errors = new List<ValidationError>();
@@ -292,6 +409,92 @@ public sealed class PatientService(
         return errors;
     }
 
+    private static List<ValidationError> ValidateVitals(RecordVitalsRequest request)
+    {
+        var errors = new List<ValidationError>();
+        if (request.SystolicBloodPressure is null
+            && request.DiastolicBloodPressure is null
+            && request.HeartRate is null
+            && request.BloodSugarMgDl is null
+            && request.WeightKg is null
+            && request.TemperatureCelsius is null)
+        {
+            errors.Add(new ValidationError(nameof(request), "At least one vital value is required."));
+        }
+
+        if (request.RecordedAt.HasValue && request.RecordedAt.Value.ToUniversalTime() > DateTimeOffset.UtcNow.AddMinutes(5))
+        {
+            errors.Add(new ValidationError(nameof(request.RecordedAt), "RecordedAt cannot be in the future."));
+        }
+
+        if (request.SystolicBloodPressure.HasValue != request.DiastolicBloodPressure.HasValue)
+        {
+            errors.Add(new ValidationError(nameof(request.SystolicBloodPressure), "Both systolic and diastolic blood pressure are required together."));
+        }
+
+        Range(request.SystolicBloodPressure, 50, 260, nameof(request.SystolicBloodPressure), errors);
+        Range(request.DiastolicBloodPressure, 30, 180, nameof(request.DiastolicBloodPressure), errors);
+        Range(request.HeartRate, (short)30, (short)220, nameof(request.HeartRate), errors);
+        Range(request.BloodSugarMgDl, 20m, 800m, nameof(request.BloodSugarMgDl), errors);
+        Range(request.WeightKg, 1m, 500m, nameof(request.WeightKg), errors);
+        Range(request.TemperatureCelsius, 30m, 45m, nameof(request.TemperatureCelsius), errors);
+
+        if (!string.IsNullOrWhiteSpace(request.BloodSugarContext) && request.BloodSugarContext.Trim().Length > 40)
+        {
+            errors.Add(new ValidationError(nameof(request.BloodSugarContext), "BloodSugarContext cannot exceed 40 characters."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Notes) && request.Notes.Trim().Length > 1000)
+        {
+            errors.Add(new ValidationError(nameof(request.Notes), "Notes cannot exceed 1000 characters."));
+        }
+
+        return errors;
+    }
+
+    private static VitalTrendResponse BuildTrend(
+        IReadOnlyList<PatientVital> vitals,
+        string metric,
+        string unit,
+        Func<PatientVital, decimal?> selector)
+    {
+        var values = vitals
+            .Select(x => new { Vital = x, Value = selector(x) })
+            .Where(x => x.Value.HasValue)
+            .OrderByDescending(x => x.Vital.RecordedAt)
+            .ToList();
+
+        var latest = values.ElementAtOrDefault(0);
+        var previous = values.ElementAtOrDefault(1);
+        var change = latest?.Value - previous?.Value;
+        var direction = change switch
+        {
+            null => latest is null ? "NoData" : "New",
+            > 0 => "Up",
+            < 0 => "Down",
+            _ => "Flat"
+        };
+
+        return new VitalTrendResponse(
+            metric,
+            unit,
+            latest?.Value,
+            previous?.Value,
+            change,
+            direction,
+            latest?.Vital.RecordedAt);
+    }
+
+    private static decimal? ToDecimal(int? value)
+    {
+        return value.HasValue ? value.Value : null;
+    }
+
+    private static decimal? ToDecimal(short? value)
+    {
+        return value.HasValue ? value.Value : null;
+    }
+
     private static void ValidateJsonArray(string? value, string field, List<ValidationError> errors)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -319,6 +522,30 @@ public sealed class PatientService(
         if (string.IsNullOrWhiteSpace(value))
         {
             errors.Add(new ValidationError(field, $"{field} is required."));
+        }
+    }
+
+    private static void Range(int? value, int min, int max, string field, List<ValidationError> errors)
+    {
+        if (value.HasValue && (value.Value < min || value.Value > max))
+        {
+            errors.Add(new ValidationError(field, $"{field} must be between {min} and {max}."));
+        }
+    }
+
+    private static void Range(short? value, short min, short max, string field, List<ValidationError> errors)
+    {
+        if (value.HasValue && (value.Value < min || value.Value > max))
+        {
+            errors.Add(new ValidationError(field, $"{field} must be between {min} and {max}."));
+        }
+    }
+
+    private static void Range(decimal? value, decimal min, decimal max, string field, List<ValidationError> errors)
+    {
+        if (value.HasValue && (value.Value < min || value.Value > max))
+        {
+            errors.Add(new ValidationError(field, $"{field} must be between {min} and {max}."));
         }
     }
 

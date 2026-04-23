@@ -13,4 +13,14 @@ public interface IPatientService
     Task<Result<PatientResponse>> UpdateProfileAsync(Guid patientId, UpdatePatientProfileRequest request, CancellationToken cancellationToken);
 
     Task<Result<MedicalHistoryResponse>> UpdateMedicalHistoryAsync(Guid patientId, UpdateMedicalHistoryRequest request, CancellationToken cancellationToken);
+
+    Task<Result<PatientVitalsResponse>> RecordVitalsAsync(Guid patientId, RecordVitalsRequest request, CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<PatientVitalsResponse>>> GetVitalsHistoryAsync(
+        Guid patientId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<VitalTrendResponse>>> GetVitalsTrendsAsync(Guid patientId, CancellationToken cancellationToken);
 }

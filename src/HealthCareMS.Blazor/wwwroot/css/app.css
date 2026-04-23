@@ -509,7 +509,7 @@ a, .btn-link {
     border-radius: 6px;
     display: grid;
     gap: 0.25rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-bottom: 0.85rem;
     padding: 0.25rem;
 }
@@ -740,6 +740,152 @@ a, .btn-link {
 
 .prescription-result {
     margin-top: 1rem;
+}
+
+.vitals-form-grid,
+.trend-grid {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.vitals-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trend-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trend-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.25rem;
+    min-height: 4.6rem;
+    padding: 0.7rem;
+}
+
+.trend-card span {
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.trend-card strong {
+    font-size: 1.05rem;
+}
+
+.chart-shell {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.chart-legend span {
+    align-items: center;
+    color: #475569;
+    display: inline-flex;
+    font-size: 0.84rem;
+    font-weight: 800;
+    gap: 0.35rem;
+}
+
+.chart-legend i {
+    border-radius: 999px;
+    display: inline-block;
+    height: 0.55rem;
+    width: 1.5rem;
+}
+
+.line-blue {
+    background: #0284c7;
+}
+
+.line-green {
+    background: #16a34a;
+}
+
+.vitals-chart {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    height: auto;
+    width: 100%;
+}
+
+.vitals-chart line {
+    stroke: #cbd5e1;
+    stroke-width: 1.2;
+}
+
+.chart-line {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 3;
+}
+
+.chart-line.blue {
+    stroke: #0284c7;
+}
+
+.chart-line.green {
+    stroke: #16a34a;
+}
+
+.vitals-history-row {
+    grid-template-columns: minmax(8rem, 0.8fr) minmax(5rem, 0.4fr) minmax(7rem, 0.5fr) minmax(5rem, 0.4fr) minmax(5rem, 0.4fr);
+}
+
+.vitals-compact-form {
+    border-bottom: 1px solid #e2e8f0;
+    display: grid;
+    gap: 0.55rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+}
+
+.vitals-compact-form input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    min-height: 2.25rem;
+    padding: 0 0.55rem;
+    width: 100%;
+}
+
+.vitals-two-column {
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vitals-two-column label {
+    color: #334155;
+    display: grid;
+    font-size: 0.78rem;
+    font-weight: 800;
+    gap: 0.25rem;
+}
+
+.compact-trends {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 0.75rem;
+}
+
+.compact-vitals-history {
+    max-height: 13rem;
+    overflow: auto;
+}
+
+.vitals-video-row {
+    grid-template-columns: minmax(4rem, 0.4fr) minmax(5rem, 0.45fr) minmax(5rem, 0.45fr);
 }
 
 .notification-filter {
@@ -1011,6 +1157,8 @@ code {
     .medicine-search,
     .drug-results,
     .medicine-form,
+    .vitals-form-grid,
+    .trend-grid,
     .notification-filter,
     .notification-item,
     .preferences-grid,

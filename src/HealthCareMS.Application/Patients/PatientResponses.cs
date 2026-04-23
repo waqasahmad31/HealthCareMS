@@ -36,3 +36,26 @@ public sealed record MedicalHistoryResponse(
     string SmokingStatus,
     string AlcoholStatus,
     DateTimeOffset? UpdatedAt);
+
+public sealed record PatientVitalsResponse(
+    Guid Id,
+    Guid PatientId,
+    DateTimeOffset RecordedAt,
+    int? SystolicBloodPressure,
+    int? DiastolicBloodPressure,
+    short? HeartRate,
+    decimal? BloodSugarMgDl,
+    string? BloodSugarContext,
+    decimal? WeightKg,
+    decimal? TemperatureCelsius,
+    string? Notes,
+    DateTimeOffset CreatedAt);
+
+public sealed record VitalTrendResponse(
+    string Metric,
+    string Unit,
+    decimal? LatestValue,
+    decimal? PreviousValue,
+    decimal? Change,
+    string Direction,
+    DateTimeOffset? LatestRecordedAt);

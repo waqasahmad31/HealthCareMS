@@ -94,6 +94,83 @@ public sealed class PatientAndDoctorServiceTests
         Assert.Equal(new TimeOnly(10, 0), slotsResult.Value[1].EndTime);
     }
 
+    [Fact]
+    public async Task RecordVitalsAsync_ShouldSavePatientVitalsAndReturnHistory()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedRoleAsync(dbContext, "Patient");
+        var service = new PatientService(dbContext, new Pbkdf2PasswordHasher());
+        var patient = await RegisterPatientAsync(service);
+
+        var result = await service.RecordVitalsAsync(
+            patient.Id,
+            new RecordVitalsRequest(
+                DateTimeOffset.UtcNow.AddMinutes(-15),
+                118,
+                76,
+                72,
+                110m,
+                "Random",
+                62.5m,
+                37.1m,
+                "Home reading"),
+            CancellationToken.None);
+
+        var history = await service.GetVitalsHistoryAsync(patient.Id, null, null, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(patient.Id, result.Value.PatientId);
+        Assert.True(history.IsSuccess);
+        var vital = Assert.Single(history.Value);
+        Assert.Equal(118, vital.SystolicBloodPressure);
+        Assert.Equal(110m, vital.BloodSugarMgDl);
+    }
+
+    [Fact]
+    public async Task GetVitalsTrendsAsync_ShouldCalculateMetricDirectionAndChange()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedRoleAsync(dbContext, "Patient");
+        var service = new PatientService(dbContext, new Pbkdf2PasswordHasher());
+        var patient = await RegisterPatientAsync(service);
+
+        await service.RecordVitalsAsync(
+            patient.Id,
+            new RecordVitalsRequest(DateTimeOffset.UtcNow.AddHours(-2), 110, 70, 68, 95m, "Fasting", 70m, 36.8m, null),
+            CancellationToken.None);
+        await service.RecordVitalsAsync(
+            patient.Id,
+            new RecordVitalsRequest(DateTimeOffset.UtcNow.AddHours(-1), 124, 82, 74, 132m, "Random", 69.4m, 37.2m, null),
+            CancellationToken.None);
+
+        var trends = await service.GetVitalsTrendsAsync(patient.Id, CancellationToken.None);
+
+        Assert.True(trends.IsSuccess);
+        var systolic = trends.Value.Single(x => x.Metric == "Systolic BP");
+        var weight = trends.Value.Single(x => x.Metric == "Weight");
+        Assert.Equal("Up", systolic.Direction);
+        Assert.Equal(14m, systolic.Change);
+        Assert.Equal("Down", weight.Direction);
+        Assert.Equal(-0.6m, weight.Change);
+    }
+
+    [Fact]
+    public async Task RecordVitalsAsync_ShouldRejectPartialBloodPressure()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedRoleAsync(dbContext, "Patient");
+        var service = new PatientService(dbContext, new Pbkdf2PasswordHasher());
+        var patient = await RegisterPatientAsync(service);
+
+        var result = await service.RecordVitalsAsync(
+            patient.Id,
+            new RecordVitalsRequest(DateTimeOffset.UtcNow, 120, null, null, null, null, null, null, null),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", result.Error.Code);
+    }
+
     private static HealthCareDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<HealthCareDbContext>()
@@ -112,6 +189,34 @@ public sealed class PatientAndDoctorServiceTests
         });
 
         await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task<PatientResponse> RegisterPatientAsync(PatientService service)
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var result = await service.RegisterAsync(
+            new RegisterPatientRequest(
+                "Vitals",
+                "Patient",
+                $"vitals-{suffix}@example.com",
+                "StrongPass123",
+                null,
+                new DateOnly(1990, 1, 1),
+                "Female",
+                "O+",
+                "+923001234567",
+                null,
+                "Street 1",
+                "Lahore",
+                "Punjab",
+                "54000",
+                "Emergency Contact",
+                "+923009876543",
+                "Sibling"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        return result.Value;
     }
 
     private static DateOnly Next(DayOfWeek dayOfWeek)

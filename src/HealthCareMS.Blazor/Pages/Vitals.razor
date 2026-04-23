@@ -1,0 +1,308 @@
+@page "/vitals"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Vitals</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Patient Health</p>
+        <h1>Vitals Tracking</h1>
+    </div>
+    <button class="primary-button" type="button" @onclick="RecordVitalsAsync" disabled="@IsBusy">Record</button>
+</section>
+
+<section class="consultation-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Entry</h2>
+            <span class="status-pill blue">Vitals</span>
+        </div>
+        <EditForm Model="Form" class="entity-form">
+            <label>
+                PatientId
+                <InputText @bind-Value="PatientIdText" />
+            </label>
+            <label>
+                RecordedAt
+                <input type="datetime-local" value="@RecordedAtText" @onchange="OnRecordedAtChanged" />
+            </label>
+            <div class="vitals-form-grid">
+                <label>
+                    Systolic BP
+                    <InputNumber @bind-Value="Form.SystolicBloodPressure" />
+                </label>
+                <label>
+                    Diastolic BP
+                    <InputNumber @bind-Value="Form.DiastolicBloodPressure" />
+                </label>
+                <label>
+                    Heart Rate
+                    <InputNumber @bind-Value="Form.HeartRate" />
+                </label>
+                <label>
+                    Blood Sugar
+                    <InputNumber @bind-Value="Form.BloodSugarMgDl" />
+                </label>
+                <label>
+                    Sugar Context
+                    <select @bind="Form.BloodSugarContext">
+                        <option value="">Not set</option>
+                        <option>Fasting</option>
+                        <option>Random</option>
+                        <option>PostMeal</option>
+                    </select>
+                </label>
+                <label>
+                    Weight
+                    <InputNumber @bind-Value="Form.WeightKg" />
+                </label>
+                <label>
+                    Temperature
+                    <InputNumber @bind-Value="Form.TemperatureCelsius" />
+                </label>
+            </div>
+            <label>
+                Notes
+                <InputTextArea @bind-Value="Form.Notes" />
+            </label>
+            <div class="header-actions">
+                <button class="secondary-button" type="button" @onclick="LoadVitalsAsync" disabled="@IsBusy">Load History</button>
+                <button class="secondary-button" type="button" @onclick="ResetForm">Reset</button>
+            </div>
+        </EditForm>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Trends</h2>
+            <span class="status-pill green">@VitalsTrends.Count</span>
+        </div>
+        <div class="trend-grid">
+            @foreach (var trend in VitalsTrends)
+            {
+                <div class="trend-card">
+                    <span>@trend.Metric</span>
+                    <strong>@TrendValue(trend)</strong>
+                    <code>@TrendChange(trend)</code>
+                </div>
+            }
+        </div>
+
+        <div class="chart-shell">
+            <div class="chart-legend">
+                <span><i class="line-blue"></i> Systolic BP</span>
+                <span><i class="line-green"></i> Blood Sugar</span>
+            </div>
+            @if (VitalsHistory.Count < 2)
+            {
+                <div class="empty-state">Record at least two vitals to show a line chart.</div>
+            }
+            else
+            {
+                <svg class="vitals-chart" viewBox="0 0 360 160" role="img" aria-label="Vitals history chart">
+                    <line x1="28" y1="132" x2="340" y2="132"></line>
+                    <line x1="28" y1="18" x2="28" y2="132"></line>
+                    <polyline class="chart-line blue" points="@SystolicPoints"></polyline>
+                    <polyline class="chart-line green" points="@BloodSugarPoints"></polyline>
+                </svg>
+            }
+        </div>
+    </article>
+</section>
+
+@if (VitalsHistory.Count > 0)
+{
+    <section class="panel">
+        <div class="panel-header">
+            <h2>History</h2>
+            <span class="status-pill blue">@VitalsHistory.Count</span>
+        </div>
+        <div class="table-shell">
+            <div class="table-row table-head vitals-history-row">
+                <span>Recorded</span>
+                <span>BP</span>
+                <span>Sugar</span>
+                <span>Weight</span>
+                <span>Temp</span>
+            </div>
+            @foreach (var vital in VitalsHistory)
+            {
+                <div class="table-row vitals-history-row">
+                    <span>@vital.RecordedAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                    <span>@BloodPressure(vital)</span>
+                    <span>@Sugar(vital)</span>
+                    <span>@(vital.WeightKg?.ToString("0.##") ?? "-") kg</span>
+                    <span>@(vital.TemperatureCelsius?.ToString("0.##") ?? "-") C</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private RecordVitalsModel Form { get; set; } = NewForm();
+
+    private string PatientIdText { get; set; } = string.Empty;
+
+    private string RecordedAtText { get; set; } = ToDateTimeLocal(DateTimeOffset.UtcNow);
+
+    private IReadOnlyList<PatientVitalsModel> VitalsHistory { get; set; } = [];
+
+    private IReadOnlyList<VitalTrendModel> VitalsTrends { get; set; } = [];
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private string SystolicPoints => SvgPoints(x => x.SystolicBloodPressure);
+
+    private string BloodSugarPoints => SvgPoints(x => x.BloodSugarMgDl);
+
+    private async Task RecordVitalsAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("PatientId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<RecordVitalsModel, PatientVitalsModel>(
+            $"api/v1/patients/{patientId}/vitals",
+            Form);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            ResetForm();
+            await LoadVitalsAsync();
+            SetStatus("Vitals recorded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Vitals recording failed.", "tone-amber");
+    }
+
+    private async Task LoadVitalsAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("PatientId is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var history = await ApiClient.GetAsync<IReadOnlyList<PatientVitalsModel>>($"api/v1/patients/{patientId}/vitals");
+        var trends = await ApiClient.GetAsync<IReadOnlyList<VitalTrendModel>>($"api/v1/patients/{patientId}/vitals/trends");
+        IsBusy = false;
+
+        if (history?.Success == true && history.Data is not null)
+        {
+            VitalsHistory = history.Data;
+        }
+
+        if (trends?.Success == true && trends.Data is not null)
+        {
+            VitalsTrends = trends.Data;
+        }
+
+        SetStatus("Vitals loaded.", "tone-green");
+    }
+
+    private void ResetForm()
+    {
+        Form = NewForm();
+        RecordedAtText = ToDateTimeLocal(Form.RecordedAt ?? DateTimeOffset.UtcNow);
+    }
+
+    private void OnRecordedAtChanged(ChangeEventArgs args)
+    {
+        RecordedAtText = args.Value?.ToString() ?? string.Empty;
+        Form.RecordedAt = DateTimeOffset.TryParse(RecordedAtText, out var parsed)
+            ? parsed
+            : DateTimeOffset.UtcNow;
+    }
+
+    private string SvgPoints(Func<PatientVitalsModel, decimal?> selector)
+    {
+        var values = VitalsHistory
+            .OrderBy(x => x.RecordedAt)
+            .Select(x => new { Vital = x, Value = selector(x) })
+            .Where(x => x.Value.HasValue)
+            .TakeLast(12)
+            .ToList();
+
+        if (values.Count < 2)
+        {
+            return string.Empty;
+        }
+
+        var min = values.Min(x => x.Value!.Value);
+        var max = values.Max(x => x.Value!.Value);
+        if (min == max)
+        {
+            min -= 1;
+            max += 1;
+        }
+
+        return string.Join(" ", values.Select((item, index) =>
+        {
+            var x = 28m + (312m * index / (values.Count - 1));
+            var y = 132m - (114m * (item.Value!.Value - min) / (max - min));
+            return $"{x:0.##},{y:0.##}";
+        }));
+    }
+
+    private static RecordVitalsModel NewForm()
+    {
+        return new RecordVitalsModel
+        {
+            RecordedAt = DateTimeOffset.UtcNow,
+            BloodSugarContext = "Random"
+        };
+    }
+
+    private static string ToDateTimeLocal(DateTimeOffset value)
+    {
+        return value.LocalDateTime.ToString("yyyy-MM-ddTHH:mm");
+    }
+
+    private static string TrendValue(VitalTrendModel trend)
+    {
+        return trend.LatestValue.HasValue ? $"{trend.LatestValue:0.##} {trend.Unit}" : "-";
+    }
+
+    private static string TrendChange(VitalTrendModel trend)
+    {
+        return trend.Change.HasValue ? $"{trend.Direction} {trend.Change:+0.##;-0.##;0}" : trend.Direction;
+    }
+
+    private static string BloodPressure(PatientVitalsModel vital)
+    {
+        return vital.SystolicBloodPressure.HasValue && vital.DiastolicBloodPressure.HasValue
+            ? $"{vital.SystolicBloodPressure}/{vital.DiastolicBloodPressure}"
+            : "-";
+    }
+
+    private static string Sugar(PatientVitalsModel vital)
+    {
+        return vital.BloodSugarMgDl.HasValue
+            ? $"{vital.BloodSugarMgDl:0.##} {vital.BloodSugarContext}"
+            : "-";
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}
