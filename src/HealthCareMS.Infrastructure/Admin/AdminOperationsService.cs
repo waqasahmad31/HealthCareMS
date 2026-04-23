@@ -229,6 +229,11 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         await EnsureDefaultSettingsAsync(cancellationToken);
         var normalizedCulture = string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en";
         var assignmentKeys = await GetAssignedMenuKeysAsync(currentUser.UserId!.Value, cancellationToken);
+        var icons = await dbContext.NavigationIcons
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .ToListAsync(cancellationToken);
+        var iconLookup = icons.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
         var groups = await dbContext.NavigationGroups
             .AsNoTracking()
             .Include(x => x.Items)
@@ -237,7 +242,7 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
             .ToListAsync(cancellationToken);
 
         var mapped = groups
-            .Select(x => MapGroupFromEntity(x, normalizedCulture, assignmentKeys))
+            .Select(x => MapGroupFromEntity(x, normalizedCulture, assignmentKeys, iconLookup))
             .Where(x => x.Items.Count > 0)
             .ToList();
 
@@ -500,15 +505,18 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         return await dbContext.NavigationIcons
             .AsNoTracking()
             .OrderBy(x => x.Key)
-            .Select(x => new NavigationIconResponse(x.Id, x.Key, x.Symbol, x.Description, x.IsActive))
+            .Select(x => new NavigationIconResponse(x.Id, x.Key, x.LabelEn, x.LabelUr, x.CssClass, x.Symbol, x.Description, x.IsActive))
             .ToListAsync(cancellationToken);
     }
 
     public async Task<Result<NavigationIconResponse>> CreateNavigationIconAsync(CreateNavigationIconRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Key) || string.IsNullOrWhiteSpace(request.Symbol))
+        if (string.IsNullOrWhiteSpace(request.Key)
+            || string.IsNullOrWhiteSpace(request.LabelEn)
+            || string.IsNullOrWhiteSpace(request.LabelUr)
+            || string.IsNullOrWhiteSpace(request.Symbol))
         {
-            return Result<NavigationIconResponse>.Failure(new Error("NAVIGATION_ICON_INVALID", "Key and symbol are required."));
+            return Result<NavigationIconResponse>.Failure(new Error("NAVIGATION_ICON_INVALID", "Key, labels, and symbol are required."));
         }
 
         var key = request.Key.Trim();
@@ -520,13 +528,16 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         var icon = new NavigationIcon
         {
             Key = key,
+            LabelEn = request.LabelEn.Trim(),
+            LabelUr = request.LabelUr.Trim(),
+            CssClass = Normalize(request.CssClass),
             Symbol = request.Symbol.Trim(),
             Description = request.Description?.Trim(),
             IsActive = request.IsActive
         };
         dbContext.NavigationIcons.Add(icon);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result<NavigationIconResponse>.Success(new NavigationIconResponse(icon.Id, icon.Key, icon.Symbol, icon.Description, icon.IsActive));
+        return Result<NavigationIconResponse>.Success(new NavigationIconResponse(icon.Id, icon.Key, icon.LabelEn, icon.LabelUr, icon.CssClass, icon.Symbol, icon.Description, icon.IsActive));
     }
 
     public async Task<Result<NavigationIconResponse>> UpdateNavigationIconAsync(Guid iconId, UpdateNavigationIconRequest request, CancellationToken cancellationToken)
@@ -537,11 +548,14 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
             return Result<NavigationIconResponse>.Failure(new Error("NAVIGATION_ICON_NOT_FOUND", "Navigation icon was not found."));
         }
 
+        icon.LabelEn = request.LabelEn.Trim();
+        icon.LabelUr = request.LabelUr.Trim();
+        icon.CssClass = Normalize(request.CssClass);
         icon.Symbol = request.Symbol.Trim();
         icon.Description = request.Description?.Trim();
         icon.IsActive = request.IsActive;
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result<NavigationIconResponse>.Success(new NavigationIconResponse(icon.Id, icon.Key, icon.Symbol, icon.Description, icon.IsActive));
+        return Result<NavigationIconResponse>.Success(new NavigationIconResponse(icon.Id, icon.Key, icon.LabelEn, icon.LabelUr, icon.CssClass, icon.Symbol, icon.Description, icon.IsActive));
     }
 
     public async Task<Result> DeleteNavigationIconAsync(Guid iconId, CancellationToken cancellationToken)
@@ -626,9 +640,10 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
     private NavigationMenuGroupResponse MapGroupFromEntity(
         NavigationGroup group,
         string culture,
-        IReadOnlySet<string>? assignedKeys)
+        IReadOnlySet<string>? assignedKeys,
+        IReadOnlyDictionary<string, NavigationIcon> iconLookup)
     {
-        var items = BuildMenuTree(group.Items, null, culture, assignedKeys);
+        var items = BuildMenuTree(group.Items, null, culture, assignedKeys, iconLookup);
         return new NavigationMenuGroupResponse(
             group.Key,
             SelectLocalizedValue(group.LabelEn, group.LabelUr, culture),
@@ -640,19 +655,25 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         IEnumerable<NavigationItem> allItems,
         Guid? parentId,
         string culture,
-        IReadOnlySet<string>? assignedKeys)
+        IReadOnlySet<string>? assignedKeys,
+        IReadOnlyDictionary<string, NavigationIcon> iconLookup)
     {
         return allItems
             .Where(x => x.ParentItemId == parentId && x.IsActive)
             .Where(x => IsItemAuthorized(x, assignedKeys))
             .OrderBy(x => x.SortOrder)
-            .Select(x => new NavigationMenuItemResponse(
-                x.Key,
-                SelectLocalizedValue(x.LabelEn, x.LabelUr, culture),
-                string.IsNullOrWhiteSpace(x.Icon) ? "?" : x.Icon.Trim(),
-                x.Route?.Trim() ?? string.Empty,
-                x.SortOrder,
-                BuildMenuTree(allItems, x.Id, culture, assignedKeys)))
+            .Select(x =>
+            {
+                var resolvedIcon = ResolveIcon(x.Icon, culture, iconLookup);
+                return new NavigationMenuItemResponse(
+                    x.Key,
+                    SelectLocalizedValue(x.LabelEn, x.LabelUr, culture),
+                    resolvedIcon.Icon,
+                    resolvedIcon.IconLabel,
+                    x.Route?.Trim() ?? string.Empty,
+                    x.SortOrder,
+                    BuildMenuTree(allItems, x.Id, culture, assignedKeys, iconLookup));
+            })
             .ToList();
     }
 
@@ -680,6 +701,17 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
 
     private async Task<IReadOnlySet<string>?> GetAssignedMenuKeysAsync(Guid userId, CancellationToken cancellationToken)
     {
+        var directAssignments = await dbContext.UserNavigationAssignments
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Include(x => x.NavigationItem)
+            .Select(x => x.NavigationItem.Key)
+            .ToListAsync(cancellationToken);
+        if (directAssignments.Count > 0)
+        {
+            return directAssignments.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
         var settingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
         var setting = await dbContext.SystemSettings
             .AsNoTracking()
@@ -712,6 +744,27 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         }
 
         return string.IsNullOrWhiteSpace(en) ? ur.Trim() : en.Trim();
+    }
+
+    private static (string Icon, string? IconLabel) ResolveIcon(
+        string? iconValue,
+        string culture,
+        IReadOnlyDictionary<string, NavigationIcon> iconLookup)
+    {
+        var normalized = Normalize(iconValue);
+        if (normalized is not null && iconLookup.TryGetValue(normalized, out var icon))
+        {
+            return (
+                !string.IsNullOrWhiteSpace(icon.CssClass) ? icon.CssClass.Trim() : icon.Symbol.Trim(),
+                SelectLocalizedValue(icon.LabelEn, icon.LabelUr, culture));
+        }
+
+        if (string.IsNullOrWhiteSpace(iconValue))
+        {
+            return ("bi bi-grid", null);
+        }
+
+        return (iconValue.Trim(), null);
     }
 
     private static IReadOnlyList<string> ReadRequiredPermissions(string json)
@@ -931,6 +984,11 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
             IsSensitive = source.IsSensitive,
             IsEditable = source.IsEditable
         };
+    }
+
+    private static string? Normalize(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private sealed record AppointmentStatusCount(AppointmentStatus Status, int Count);

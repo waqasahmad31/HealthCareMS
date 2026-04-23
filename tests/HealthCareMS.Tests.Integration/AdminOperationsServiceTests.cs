@@ -129,7 +129,7 @@ public sealed class AdminOperationsServiceTests
         Assert.True(childResult.IsSuccess);
 
         var iconResult = await service.CreateNavigationIconAsync(
-            new CreateNavigationIconRequest("parent-menu", "P", "Parent icon"),
+            new CreateNavigationIconRequest("parent-menu", "Parent Menu", "پیرنٹ مینو", "bi bi-grid", "P", "Parent icon"),
             CancellationToken.None);
         Assert.True(iconResult.IsSuccess);
 

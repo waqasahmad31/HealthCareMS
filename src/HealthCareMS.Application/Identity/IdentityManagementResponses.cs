@@ -28,6 +28,18 @@ public sealed record UserResponse(
     bool IsEmailVerified,
     IReadOnlyList<string> Permissions);
 
+public sealed record ManageableUserResponse(
+    Guid Id,
+    Guid? TenantId,
+    Guid RoleId,
+    string Role,
+    string FullName,
+    string Email,
+    string? PhoneNumber,
+    Guid? CreatedByUserId,
+    bool IsActive,
+    bool IsEmailVerified);
+
 public sealed record PermissionGrantResponse(
     string TargetType,
     Guid TargetId,

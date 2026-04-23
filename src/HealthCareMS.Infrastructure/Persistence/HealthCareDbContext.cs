@@ -43,6 +43,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<NavigationIcon> NavigationIcons => Set<NavigationIcon>();
 
+    public DbSet<UserNavigationAssignment> UserNavigationAssignments => Set<UserNavigationAssignment>();
+
     public DbSet<Patient> Patients => Set<Patient>();
 
     public DbSet<MedicalHistory> MedicalHistories => Set<MedicalHistory>();

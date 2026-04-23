@@ -12,6 +12,8 @@ public interface IIdentityManagementService
 
     Task<Result<PermissionGrantResponse>> GrantPermissionsAsync(GrantPermissionsRequest request, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ManageableUserResponse>> GetManageableUsersAsync(string? search, CancellationToken cancellationToken);
+
     Task<Result<UserMenuAssignmentResponse>> GetUserMenuAssignmentAsync(Guid userId, CancellationToken cancellationToken);
 
     Task<Result<UserMenuAssignmentResponse>> AssignUserMenuAsync(

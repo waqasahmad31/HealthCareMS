@@ -1,0 +1,923 @@
+@page "/admin/navigation-studio"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Navigation Studio</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Navigation Governance</p>
+        <h1>Navigation Studio</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadAllAsync" disabled="@IsBusy">Refresh</button>
+        <button class="primary-button" type="button" @onclick="SaveAssignmentAsync" disabled="@IsBusy">Save Assignment</button>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+<section class="navigation-studio-grid">
+    <section class="panel navigation-studio-panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-subtitle">Permission-based assignment</p>
+                <h2>User Menu Assignment</h2>
+            </div>
+            <span class="status-pill blue">@SelectedMenuKeys.Count selected</span>
+        </div>
+
+        <div class="entity-form navigation-user-filters">
+            <label>
+                Search Users
+                <input value="@UserSearchQuery" @oninput="OnUserSearchChanged" placeholder="Search by name, email, role" />
+            </label>
+            <label>
+                Assign To
+                <select @bind="SelectedUserId" @bind:after="LoadAssignmentAsync">
+                    <option value="">Select a manageable user</option>
+                    @foreach (var user in ManageableUsers)
+                    {
+                        <option value="@user.Id.ToString()">@user.FullName (@user.Role)</option>
+                    }
+                </select>
+            </label>
+            <label>
+                Preview Language
+                <div class="culture-toggle">
+                    <button class="@(PreviewCulture == "en" ? "primary-button small-button" : "secondary-button small-button")" type="button" @onclick='() => SetPreviewCulture("en")'>EN</button>
+                    <button class="@(PreviewCulture == "ur" ? "primary-button small-button" : "secondary-button small-button")" type="button" @onclick='() => SetPreviewCulture("ur")'>UR</button>
+                </div>
+            </label>
+        </div>
+
+        <div class="navigation-studio-toolbar">
+            <label>
+                Search Menus
+                <input value="@MenuSearchQuery" @oninput="OnMenuSearchChanged" placeholder="Search by label, key, route, permission" />
+            </label>
+            <div class="action-cluster">
+                <button class="secondary-button small-button" type="button" @onclick="SelectVisibleItems" disabled="@IsBusy">Select Visible</button>
+                <button class="secondary-button small-button" type="button" @onclick="ClearVisibleItems" disabled="@IsBusy">Clear Visible</button>
+            </div>
+        </div>
+
+        @if (NavigationGroups.Count == 0)
+        {
+            <div class="empty-state">Navigation items are not available yet.</div>
+        }
+        else
+        {
+            <div class="navigation-assignment-tree">
+                @foreach (var group in FilteredGroups)
+                {
+                    <div class="nav-tree-group">
+                        <div class="nav-tree-group-head">
+                            <div>
+                                <strong>@group.Label</strong>
+                                <span>@group.Key</span>
+                            </div>
+                            <div class="action-cluster">
+                                <span class="status-pill blue">@CountSelected(group.Items) selected</span>
+                                <button class="secondary-button small-button" type="button" @onclick="() => SelectGroup(group)">All</button>
+                                <button class="secondary-button small-button" type="button" @onclick="() => ClearGroup(group)">Clear</button>
+                            </div>
+                        </div>
+                        <div class="nav-tree-items">
+                            @foreach (var item in group.Items)
+                            {
+                                @RenderTreeItem(item, 0)
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="panel navigation-studio-panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-subtitle">Resolved preview</p>
+                <h2>Effective Navigation</h2>
+            </div>
+        </div>
+
+        @if (PreviewGroups.Count == 0)
+        {
+            <div class="empty-state">Select menus to preview the effective tree.</div>
+        }
+        else
+        {
+            <div class="navigation-preview">
+                @foreach (var group in PreviewGroups)
+                {
+                    <div class="preview-group">
+                        <strong>@group.Label</strong>
+                        <div class="preview-tree">
+                            @foreach (var item in group.Items)
+                            {
+                                @RenderPreviewItem(item, 0)
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+</section>
+
+<section class="navigation-studio-grid">
+    <section class="panel navigation-studio-panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-subtitle">Super Admin controls</p>
+                <h2>Menu Groups And Items</h2>
+            </div>
+        </div>
+
+        <div class="navigation-crud-grid">
+            <div class="navigation-form-shell">
+                <h3>Create Group</h3>
+                <div class="entity-form">
+                    <label>
+                        Key
+                        <input @bind="CreateGroup.Key" />
+                    </label>
+                    <label>
+                        Label EN
+                        <input @bind="CreateGroup.LabelEn" />
+                    </label>
+                    <label>
+                        Label UR
+                        <input @bind="CreateGroup.LabelUr" />
+                    </label>
+                    <label>
+                        Sort Order
+                        <InputNumber @bind-Value="CreateGroup.SortOrder" />
+                    </label>
+                    <button class="primary-button small-button" type="button" @onclick="CreateNavigationGroupAsync" disabled="@IsBusy">Create Group</button>
+                </div>
+            </div>
+
+            <div class="navigation-form-shell">
+                <h3>Create Menu Or Submenu</h3>
+                <div class="entity-form">
+                    <label>
+                        Group
+                        <select @bind="CreateItem.NavigationGroupId">
+                            <option value="@Guid.Empty">Select group</option>
+                            @foreach (var group in NavigationCrudGroups.OrderBy(x => x.SortOrder))
+                            {
+                                <option value="@group.Id">@group.Key</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        Parent Menu
+                        <select @bind="CreateItem.ParentItemId">
+                            <option value="">Root</option>
+                            @foreach (var item in FlattenItems(NavigationCrudItems))
+                            {
+                                <option value="@item.Id">@BuildHierarchyLabel(item)</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        Key
+                        <input @bind="CreateItem.Key" />
+                    </label>
+                    <label>
+                        Label EN
+                        <input @bind="CreateItem.LabelEn" />
+                    </label>
+                    <label>
+                        Label UR
+                        <input @bind="CreateItem.LabelUr" />
+                    </label>
+                    <label>
+                        Icon
+                        <select @bind="CreateItem.Icon">
+                            <option value="">Select icon</option>
+                            @foreach (var icon in NavigationCrudIcons.OrderBy(x => x.LabelEn))
+                            {
+                                <option value="@icon.Key">@icon.LabelEn (@icon.Key)</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        Route
+                        <input @bind="CreateItem.Route" placeholder="admin/navigation-studio" />
+                    </label>
+                    <label>
+                        Sort Order
+                        <InputNumber @bind-Value="CreateItem.SortOrder" />
+                    </label>
+                    <div class="navigation-permission-picker">
+                        <strong>Required Permissions</strong>
+                        <div class="permission-chip-grid">
+                            @foreach (var permission in PermissionCatalogue)
+                            {
+                                <label class="permission-chip">
+                                    <input
+                                        type="checkbox"
+                                        checked="@SelectedItemPermissions.Contains(permission.PermissionKey)"
+                                        @onchange="args => ToggleCreateItemPermission(permission.PermissionKey, args.Value is bool selected && selected)" />
+                                    <span>@permission.PermissionKey</span>
+                                </label>
+                            }
+                        </div>
+                    </div>
+                    <button class="primary-button small-button" type="button" @onclick="CreateNavigationItemAsync" disabled="@IsBusy">Create Menu</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-shell">
+            @foreach (var group in NavigationCrudGroups.OrderBy(x => x.SortOrder))
+            {
+                <div class="table-row navigation-crud-row">
+                    <div>
+                        <strong>@group.LabelEn</strong>
+                        <span>@group.LabelUr</span>
+                        <small>@group.Key</small>
+                    </div>
+                    <span>@group.SortOrder</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationGroupAsync(group.Id)" disabled="@IsBusy">Delete</button>
+                </div>
+            }
+        </div>
+
+        <div class="table-shell">
+            @foreach (var item in FlattenItems(NavigationCrudItems))
+            {
+                <div class="table-row navigation-crud-row">
+                    <div>
+                        <strong>@BuildHierarchyLabel(item)</strong>
+                        <span>@item.Route</span>
+                        <small>@string.Join(", ", item.RequiredPermissions)</small>
+                    </div>
+                    <span>@item.Icon</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationItemAsync(item.Id)" disabled="@IsBusy">Delete</button>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="panel navigation-studio-panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-subtitle">Icon catalogue</p>
+                <h2>Localized Icons</h2>
+            </div>
+        </div>
+
+        <div class="entity-form">
+            <label>
+                Key
+                <input @bind="CreateIcon.Key" />
+            </label>
+            <label>
+                Label EN
+                <input @bind="CreateIcon.LabelEn" />
+            </label>
+            <label>
+                Label UR
+                <input @bind="CreateIcon.LabelUr" />
+            </label>
+            <label>
+                Bootstrap/Icon CSS
+                <input @bind="CreateIcon.CssClass" placeholder="bi bi-grid-1x2-fill" />
+            </label>
+            <label>
+                Fallback Symbol
+                <input @bind="CreateIcon.Symbol" />
+            </label>
+            <label>
+                Description
+                <input @bind="CreateIcon.Description" />
+            </label>
+            <button class="primary-button small-button" type="button" @onclick="CreateNavigationIconAsync" disabled="@IsBusy">Create Icon</button>
+        </div>
+
+        <div class="icon-catalogue">
+            @foreach (var icon in NavigationCrudIcons.OrderBy(x => x.LabelEn))
+            {
+                <div class="icon-catalogue-row">
+                    <div class="icon-catalogue-preview">
+                        @if (!string.IsNullOrWhiteSpace(icon.CssClass))
+                        {
+                            <i class="@icon.CssClass" aria-hidden="true"></i>
+                        }
+                        else
+                        {
+                            <span>@icon.Symbol</span>
+                        }
+                    </div>
+                    <div>
+                        <strong>@icon.LabelEn</strong>
+                        <span>@icon.LabelUr</span>
+                        <small>@icon.Key</small>
+                    </div>
+                    <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationIconAsync(icon.Id)" disabled="@IsBusy">Delete</button>
+                </div>
+            }
+        </div>
+    </section>
+</section>
+
+@code {
+    private bool IsBusy { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+    private string PreviewCulture { get; set; } = "en";
+    private string UserSearchQuery { get; set; } = string.Empty;
+    private string MenuSearchQuery { get; set; } = string.Empty;
+    private string SelectedUserId { get; set; } = string.Empty;
+
+    private List<ManageableUserModel> ManageableUsers { get; set; } = [];
+    private List<PermissionModel> PermissionCatalogue { get; set; } = [];
+    private List<NavigationGroupModel> NavigationCrudGroups { get; set; } = [];
+    private List<NavigationItemModel> NavigationCrudItems { get; set; } = [];
+    private List<NavigationIconModel> NavigationCrudIcons { get; set; } = [];
+    private List<MenuTreeGroup> NavigationGroups { get; set; } = [];
+
+    private HashSet<string> SelectedMenuKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> SelectedItemPermissions { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    private CreateNavigationGroupModel CreateGroup { get; set; } = new();
+    private CreateNavigationItemModel CreateItem { get; set; } = new();
+    private CreateNavigationIconModel CreateIcon { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync()
+    {
+        IsBusy = true;
+        await LoadManageableUsersAsync();
+        await LoadPermissionCatalogueAsync();
+        await LoadNavigationCrudAsync();
+        IsBusy = false;
+
+        if (Guid.TryParse(SelectedUserId, out _))
+        {
+            await LoadAssignmentAsync();
+        }
+    }
+
+    private async Task LoadManageableUsersAsync()
+    {
+        var response = await ApiClient.GetAsync<IReadOnlyList<ManageableUserModel>>($"api/v1/users/manageable?search={Uri.EscapeDataString(UserSearchQuery)}");
+        if (response?.Success == true && response.Data is not null)
+        {
+            ManageableUsers = response.Data.ToList();
+            if (!string.IsNullOrWhiteSpace(SelectedUserId) && !ManageableUsers.Any(x => x.Id.ToString() == SelectedUserId))
+            {
+                SelectedUserId = string.Empty;
+                SelectedMenuKeys.Clear();
+            }
+        }
+    }
+
+    private async Task LoadPermissionCatalogueAsync()
+    {
+        var response = await ApiClient.GetAsync<IReadOnlyList<PermissionModel>>("api/v1/permissions");
+        if (response?.Success == true && response.Data is not null)
+        {
+            PermissionCatalogue = response.Data.OrderBy(x => x.PermissionKey).ToList();
+        }
+    }
+
+    private async Task LoadNavigationCrudAsync()
+    {
+        var groupsResult = await ApiClient.GetAsync<IReadOnlyList<NavigationGroupModel>>("api/v1/admin/navigation/groups");
+        var itemsResult = await ApiClient.GetAsync<IReadOnlyList<NavigationItemModel>>("api/v1/admin/navigation/items");
+        var iconsResult = await ApiClient.GetAsync<IReadOnlyList<NavigationIconModel>>("api/v1/admin/navigation/icons");
+
+        if (groupsResult?.Success == true && groupsResult.Data is not null)
+        {
+            NavigationCrudGroups = groupsResult.Data.ToList();
+        }
+
+        if (itemsResult?.Success == true && itemsResult.Data is not null)
+        {
+            NavigationCrudItems = itemsResult.Data.ToList();
+        }
+
+        if (iconsResult?.Success == true && iconsResult.Data is not null)
+        {
+            NavigationCrudIcons = iconsResult.Data.ToList();
+        }
+
+        RebuildNavigationTree();
+    }
+
+    private async Task LoadAssignmentAsync()
+    {
+        if (!Guid.TryParse(SelectedUserId, out var userId))
+        {
+            return;
+        }
+
+        var response = await ApiClient.GetAsync<UserMenuAssignmentModel>($"api/v1/users/{userId}/menu-assignment");
+        if (response?.Success == true && response.Data is not null)
+        {
+            SelectedMenuKeys.Clear();
+            foreach (var key in response.Data.MenuItemKeys)
+            {
+                SelectedMenuKeys.Add(key);
+            }
+        }
+    }
+
+    private async Task SaveAssignmentAsync()
+    {
+        if (!Guid.TryParse(SelectedUserId, out var userId))
+        {
+            SetStatus("Select a user before saving assignment.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var response = await ApiClient.PutAsync<AssignUserMenuModel, UserMenuAssignmentModel>(
+            $"api/v1/users/{userId}/menu-assignment",
+            new AssignUserMenuModel { MenuItemKeys = SelectedMenuKeys.OrderBy(x => x).ToArray() });
+        IsBusy = false;
+
+        if (response?.Success == true && response.Data is not null)
+        {
+            SelectedMenuKeys.Clear();
+            foreach (var key in response.Data.MenuItemKeys)
+            {
+                SelectedMenuKeys.Add(key);
+            }
+
+            SetStatus("Menu assignment saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Menu assignment could not be saved.", "tone-amber");
+    }
+
+    private async Task CreateNavigationGroupAsync()
+    {
+        IsBusy = true;
+        var response = await ApiClient.PostAsync<CreateNavigationGroupModel, NavigationGroupModel>("api/v1/admin/navigation/groups", CreateGroup);
+        IsBusy = false;
+        if (response?.Success == true)
+        {
+            CreateGroup = new CreateNavigationGroupModel();
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation group created.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Navigation group creation failed.", "tone-amber");
+    }
+
+    private async Task CreateNavigationItemAsync()
+    {
+        CreateItem.RequiredPermissions = SelectedItemPermissions.OrderBy(x => x).ToArray();
+        IsBusy = true;
+        var response = await ApiClient.PostAsync<CreateNavigationItemModel, NavigationItemModel>("api/v1/admin/navigation/items", CreateItem);
+        IsBusy = false;
+        if (response?.Success == true)
+        {
+            CreateItem = new CreateNavigationItemModel();
+            SelectedItemPermissions.Clear();
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation menu saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Navigation item creation failed.", "tone-amber");
+    }
+
+    private async Task CreateNavigationIconAsync()
+    {
+        IsBusy = true;
+        var response = await ApiClient.PostAsync<CreateNavigationIconModel, NavigationIconModel>("api/v1/admin/navigation/icons", CreateIcon);
+        IsBusy = false;
+        if (response?.Success == true)
+        {
+            CreateIcon = new CreateNavigationIconModel();
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation icon created.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Navigation icon creation failed.", "tone-amber");
+    }
+
+    private async Task DeleteNavigationGroupAsync(Guid groupId)
+    {
+        IsBusy = true;
+        var response = await ApiClient.DeleteAsync<object>($"api/v1/admin/navigation/groups/{groupId}");
+        IsBusy = false;
+        if (response?.Success == true)
+        {
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation group deleted.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Navigation group delete failed.", "tone-amber");
+    }
+
+    private async Task DeleteNavigationItemAsync(Guid itemId)
+    {
+        IsBusy = true;
+        var response = await ApiClient.DeleteAsync<object>($"api/v1/admin/navigation/items/{itemId}");
+        IsBusy = false;
+        if (response?.Success == true)
+        {
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation item deleted.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Navigation item delete failed.", "tone-amber");
+    }
+
+    private async Task DeleteNavigationIconAsync(Guid iconId)
+    {
+        IsBusy = true;
+        var response = await ApiClient.DeleteAsync<object>($"api/v1/admin/navigation/icons/{iconId}");
+        IsBusy = false;
+        if (response?.Success == true)
+        {
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation icon deleted.", "tone-green");
+            return;
+        }
+
+        SetStatus(response?.Error?.Message ?? "Navigation icon delete failed.", "tone-amber");
+    }
+
+    private void RebuildNavigationTree()
+    {
+        var itemLookup = FlattenItems(NavigationCrudItems).ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
+        NavigationGroups = NavigationCrudGroups
+            .OrderBy(x => x.SortOrder)
+            .Select(group => new MenuTreeGroup(
+                group.Id,
+                group.Key,
+                SelectLabel(group.LabelEn, group.LabelUr),
+                NavigationCrudItems
+                    .Where(x => x.NavigationGroupId == group.Id)
+                    .OrderBy(x => x.SortOrder)
+                    .Select(item => ToTreeItem(item, itemLookup))
+                    .ToList()))
+            .Where(x => x.Items.Count > 0)
+            .ToList();
+    }
+
+    private MenuTreeItem ToTreeItem(NavigationItemModel item, IReadOnlyDictionary<string, NavigationItemModel> itemLookup)
+    {
+        var icon = NavigationCrudIcons.FirstOrDefault(x => string.Equals(x.Key, item.Icon, StringComparison.OrdinalIgnoreCase));
+        return new MenuTreeItem(
+            item.Id,
+            item.Key,
+            SelectLabel(item.LabelEn, item.LabelUr),
+            item.Route,
+            item.SortOrder,
+            item.RequiredPermissions,
+            icon?.CssClass ?? item.Icon,
+            icon is null ? null : SelectLabel(icon.LabelEn, icon.LabelUr),
+            item.Children.OrderBy(x => x.SortOrder).Select(child => ToTreeItem(child, itemLookup)).ToList(),
+            item.ParentItemId);
+    }
+
+    private IEnumerable<MenuTreeGroup> FilteredGroups =>
+        string.IsNullOrWhiteSpace(MenuSearchQuery)
+            ? NavigationGroups
+            : NavigationGroups
+                .Select(group => new MenuTreeGroup(
+                    group.Id,
+                    group.Key,
+                    group.Label,
+                    group.Items
+                        .Select(item => FilterItem(item))
+                        .Where(item => item is not null)
+                        .Select(item => item!)
+                        .ToList()))
+                .Where(group => group.Items.Count > 0);
+
+    private IEnumerable<MenuTreeGroup> PreviewGroups =>
+        NavigationGroups
+            .Select(group => new MenuTreeGroup(
+                group.Id,
+                group.Key,
+                group.Label,
+                group.Items
+                    .Select(item => BuildSelectedPreview(item))
+                    .Where(item => item is not null)
+                    .Select(item => item!)
+                    .ToList()))
+            .Where(group => group.Items.Count > 0);
+
+    private MenuTreeItem? FilterItem(MenuTreeItem item)
+    {
+        var children = item.Children
+            .Select(FilterItem)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToList();
+
+        var matches = item.Label.Contains(MenuSearchQuery, StringComparison.OrdinalIgnoreCase)
+            || item.Key.Contains(MenuSearchQuery, StringComparison.OrdinalIgnoreCase)
+            || item.Route.Contains(MenuSearchQuery, StringComparison.OrdinalIgnoreCase)
+            || item.RequiredPermissions.Any(x => x.Contains(MenuSearchQuery, StringComparison.OrdinalIgnoreCase));
+
+        return matches || children.Count > 0
+            ? item with { Children = children }
+            : null;
+    }
+
+    private MenuTreeItem? BuildSelectedPreview(MenuTreeItem item)
+    {
+        var children = item.Children
+            .Select(BuildSelectedPreview)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToList();
+
+        var isSelected = SelectedMenuKeys.Contains(item.Key);
+        return isSelected || children.Count > 0
+            ? item with { Children = children }
+            : null;
+    }
+
+    private void ToggleCreateItemPermission(string permissionKey, bool isSelected)
+    {
+        if (isSelected)
+        {
+            SelectedItemPermissions.Add(permissionKey);
+        }
+        else
+        {
+            SelectedItemPermissions.Remove(permissionKey);
+        }
+    }
+
+    private void ToggleTreeItem(MenuTreeItem item, bool isSelected)
+    {
+        if (isSelected)
+        {
+            SelectWithAncestors(item);
+            return;
+        }
+
+        ClearWithDescendants(item);
+    }
+
+    private void SelectGroup(MenuTreeGroup group)
+    {
+        foreach (var item in group.Items)
+        {
+            SelectBranch(item);
+        }
+    }
+
+    private void ClearGroup(MenuTreeGroup group)
+    {
+        foreach (var item in group.Items)
+        {
+            ClearWithDescendants(item);
+        }
+    }
+
+    private void SelectVisibleItems()
+    {
+        foreach (var group in FilteredGroups)
+        {
+            foreach (var item in group.Items)
+            {
+                SelectBranch(item);
+            }
+        }
+    }
+
+    private void ClearVisibleItems()
+    {
+        foreach (var group in FilteredGroups)
+        {
+            foreach (var item in group.Items)
+            {
+                ClearWithDescendants(item);
+            }
+        }
+    }
+
+    private int CountSelected(IEnumerable<MenuTreeItem> items)
+    {
+        return items.Sum(item => (SelectedMenuKeys.Contains(item.Key) ? 1 : 0) + CountSelected(item.Children));
+    }
+
+    private void SelectBranch(MenuTreeItem item)
+    {
+        SelectedMenuKeys.Add(item.Key);
+        foreach (var child in item.Children)
+        {
+            SelectBranch(child);
+        }
+    }
+
+    private void SelectWithAncestors(MenuTreeItem item)
+    {
+        SelectedMenuKeys.Add(item.Key);
+        if (item.ParentItemId.HasValue)
+        {
+            var parent = FlattenTree(NavigationGroups.SelectMany(x => x.Items)).FirstOrDefault(x => x.Id == item.ParentItemId.Value);
+            if (parent is not null)
+            {
+                SelectWithAncestors(parent);
+            }
+        }
+    }
+
+    private void ClearWithDescendants(MenuTreeItem item)
+    {
+        SelectedMenuKeys.Remove(item.Key);
+        foreach (var child in item.Children)
+        {
+            ClearWithDescendants(child);
+        }
+    }
+
+    private void SetPreviewCulture(string culture)
+    {
+        PreviewCulture = string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en";
+        RebuildNavigationTree();
+    }
+
+    private async Task OnUserSearchChanged(ChangeEventArgs args)
+    {
+        UserSearchQuery = args.Value?.ToString() ?? string.Empty;
+        await LoadManageableUsersAsync();
+    }
+
+    private void OnMenuSearchChanged(ChangeEventArgs args)
+    {
+        MenuSearchQuery = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private string SelectLabel(string english, string urdu)
+    {
+        return string.Equals(PreviewCulture, "ur", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(urdu)
+            ? urdu
+            : english;
+    }
+
+    private string BuildHierarchyLabel(NavigationItemModel item)
+    {
+        var labels = new Stack<string>();
+        labels.Push(item.Key);
+        var parentId = item.ParentItemId;
+        var lookup = FlattenItems(NavigationCrudItems).ToDictionary(x => x.Id);
+        while (parentId.HasValue && lookup.TryGetValue(parentId.Value, out var parent))
+        {
+            labels.Push(parent.Key);
+            parentId = parent.ParentItemId;
+        }
+
+        return string.Join(" / ", labels);
+    }
+
+    private IEnumerable<NavigationItemModel> FlattenItems(IEnumerable<NavigationItemModel> items)
+    {
+        foreach (var item in items)
+        {
+            yield return item;
+            foreach (var child in FlattenItems(item.Children))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private IEnumerable<MenuTreeItem> FlattenTree(IEnumerable<MenuTreeItem> items)
+    {
+        foreach (var item in items)
+        {
+            yield return item;
+            foreach (var child in FlattenTree(item.Children))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private RenderFragment RenderTreeItem(MenuTreeItem item, int depth) => builder =>
+    {
+        var sequence = 0;
+        builder.OpenElement(sequence++, "div");
+        builder.AddAttribute(sequence++, "class", "nav-tree-item");
+        builder.AddAttribute(sequence++, "style", $"--depth:{depth};");
+
+        builder.OpenElement(sequence++, "label");
+        builder.AddAttribute(sequence++, "class", "nav-tree-option");
+
+        builder.OpenElement(sequence++, "input");
+        builder.AddAttribute(sequence++, "type", "checkbox");
+        builder.AddAttribute(sequence++, "checked", SelectedMenuKeys.Contains(item.Key));
+        builder.AddAttribute(sequence++, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, args => ToggleTreeItem(item, args.Value is bool selected && selected)));
+        builder.CloseElement();
+
+        builder.OpenElement(sequence++, "span");
+        builder.AddAttribute(sequence++, "class", "nav-tree-icon");
+        builder.AddAttribute(sequence++, "title", item.IconLabel ?? item.Label);
+        if (!string.IsNullOrWhiteSpace(item.Icon) && item.Icon.Contains("bi ", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.OpenElement(sequence++, "i");
+            builder.AddAttribute(sequence++, "class", item.Icon);
+            builder.CloseElement();
+        }
+        else if (!string.IsNullOrWhiteSpace(item.Icon) && item.Icon.Contains("fa", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.OpenElement(sequence++, "i");
+            builder.AddAttribute(sequence++, "class", item.Icon);
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.AddContent(sequence++, string.IsNullOrWhiteSpace(item.Icon) ? "?" : item.Icon);
+        }
+        builder.CloseElement();
+
+        builder.OpenElement(sequence++, "span");
+        builder.AddAttribute(sequence++, "class", "nav-tree-content");
+        builder.OpenElement(sequence++, "strong");
+        builder.AddContent(sequence++, item.Label);
+        builder.CloseElement();
+        builder.OpenElement(sequence++, "small");
+        builder.AddContent(sequence++, item.Key);
+        builder.CloseElement();
+        if (!string.IsNullOrWhiteSpace(item.Route))
+        {
+            builder.OpenElement(sequence++, "small");
+            builder.AddContent(sequence++, item.Route);
+            builder.CloseElement();
+        }
+        if (item.RequiredPermissions.Count > 0)
+        {
+            builder.OpenElement(sequence++, "small");
+            builder.AddContent(sequence++, string.Join(", ", item.RequiredPermissions));
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+
+        builder.CloseElement();
+
+        foreach (var child in item.Children)
+        {
+            builder.AddContent(sequence++, RenderTreeItem(child, depth + 1));
+        }
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderPreviewItem(MenuTreeItem item, int depth) => builder =>
+    {
+        var sequence = 0;
+        builder.OpenElement(sequence++, "div");
+        builder.AddAttribute(sequence++, "class", "preview-tree-item");
+        builder.AddAttribute(sequence++, "style", $"--depth:{depth};");
+        builder.OpenElement(sequence++, "span");
+        builder.AddAttribute(sequence++, "class", "preview-tree-label");
+        builder.AddContent(sequence++, item.Label);
+        builder.CloseElement();
+        foreach (var child in item.Children)
+        {
+            builder.AddContent(sequence++, RenderPreviewItem(child, depth + 1));
+        }
+        builder.CloseElement();
+    };
+
+    private sealed record MenuTreeGroup(Guid Id, string Key, string Label, IReadOnlyList<MenuTreeItem> Items);
+
+    private sealed record MenuTreeItem(
+        Guid Id,
+        string Key,
+        string Label,
+        string Route,
+        int SortOrder,
+        IReadOnlyList<string> RequiredPermissions,
+        string Icon,
+        string? IconLabel,
+        IReadOnlyList<MenuTreeItem> Children,
+        Guid? ParentItemId);
+}

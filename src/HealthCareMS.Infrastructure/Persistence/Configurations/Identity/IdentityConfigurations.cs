@@ -243,11 +243,40 @@ public sealed class NavigationIconConfiguration : IEntityTypeConfiguration<Navig
         builder.HasKey(x => x.Id);
 
         builder.Property(x => x.Key).HasMaxLength(120).IsRequired();
+        builder.Property(x => x.LabelEn).HasMaxLength(160).IsRequired();
+        builder.Property(x => x.LabelUr).HasMaxLength(160).IsRequired();
+        builder.Property(x => x.CssClass).HasMaxLength(160);
         builder.Property(x => x.Symbol).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(250);
         builder.Property(x => x.IsActive).HasDefaultValue(true);
 
         builder.HasIndex(x => x.Key).IsUnique();
         builder.HasQueryFilter(x => !x.IsDeleted);
+    }
+}
+
+public sealed class UserNavigationAssignmentConfiguration : IEntityTypeConfiguration<UserNavigationAssignment>
+{
+    public void Configure(EntityTypeBuilder<UserNavigationAssignment> builder)
+    {
+        builder.ToTable("UserNavigationAssignments", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.HasIndex(x => new { x.UserId, x.NavigationItemId, x.IsDeleted }).IsUnique();
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.NavigationItemId);
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.NavigationItem)
+            .WithMany()
+            .HasForeignKey(x => x.NavigationItemId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

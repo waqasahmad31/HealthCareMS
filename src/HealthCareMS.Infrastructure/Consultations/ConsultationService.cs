@@ -5,6 +5,7 @@ using HealthCareMS.Application.Labs;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Consultations;
 using HealthCareMS.Domain.Labs;
+using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -16,9 +17,11 @@ public sealed class ConsultationService(
     HealthCareDbContext dbContext,
     IPrescriptionDocumentService? prescriptionDocumentService = null,
     IOptions<PrescriptionDocumentOptions>? prescriptionDocumentOptions = null,
+    IApplicationLinkBuilder? applicationLinkBuilder = null,
     IConsultationSummaryDocumentService? consultationSummaryDocumentService = null) : IConsultationService
 {
     private readonly PrescriptionDocumentOptions documentOptions = prescriptionDocumentOptions?.Value ?? new PrescriptionDocumentOptions();
+    private readonly IApplicationLinkBuilder? applicationLinkBuilder = applicationLinkBuilder;
 
     private static readonly DrapMedicine[] DefaultDrapMedicines =
     [
@@ -612,6 +615,11 @@ public sealed class ConsultationService(
 
     private string BuildVerificationUrl(Prescription prescription)
     {
+        if (applicationLinkBuilder is not null)
+        {
+            return applicationLinkBuilder.BuildPrescriptionVerificationUrl(prescription.Id, prescription.VerificationCode);
+        }
+
         var baseUrl = documentOptions.VerificationBaseUrl.TrimEnd('/');
         return $"{baseUrl}/{prescription.Id}/verify?code={Uri.EscapeDataString(prescription.VerificationCode)}";
     }

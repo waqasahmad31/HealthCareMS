@@ -22,6 +22,7 @@ using HealthCareMS.Infrastructure.Identity;
 using HealthCareMS.Infrastructure.Labs;
 using HealthCareMS.Infrastructure.Notifications;
 using HealthCareMS.Infrastructure.Patients;
+using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Infrastructure.Pharmacy;
 using HealthCareMS.Infrastructure.Portals;
@@ -56,6 +57,8 @@ public static class DependencyInjection
             configuration.GetSection(ChatFileStorageOptions.SectionName).Bind(options));
         services.Configure<PrescriptionDocumentOptions>(options =>
             configuration.GetSection(PrescriptionDocumentOptions.SectionName).Bind(options));
+        services.Configure<ApplicationLinkOptions>(options =>
+            configuration.GetSection(ApplicationLinkOptions.SectionName).Bind(options));
 
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<HealthCareDbContext>());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -72,6 +75,11 @@ public static class DependencyInjection
         services.AddScoped<IAdminOperationsService, AdminOperationsService>();
         services.AddScoped<IConsultationService, ConsultationService>();
         services.AddScoped<IConsultationSessionService, ConsultationSessionService>();
+        services.AddSingleton<IApplicationLinkBuilder>(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApplicationLinkOptions>>().Value;
+            return new ApplicationLinkBuilder(options);
+        });
         services.AddScoped<IChatFileStorage, LocalChatFileStorage>();
         services.AddScoped<IConsultationChatService, ConsultationChatService>();
         services.AddScoped<IPrescriptionDocumentService, QuestPdfPrescriptionDocumentService>();

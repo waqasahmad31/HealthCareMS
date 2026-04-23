@@ -54,6 +54,13 @@ public sealed record AdminDoctorManagementModel(
     int InactiveCount,
     IReadOnlyList<AdminDoctorRowModel> Doctors);
 
+public sealed record PermissionModel(
+    Guid Id,
+    string PermissionKey,
+    string Module,
+    string Action,
+    string Description);
+
 public sealed record SystemSettingModel(
     Guid Id,
     string SettingKey,
@@ -92,6 +99,18 @@ public sealed record UserMenuAssignmentModel(
     Guid UserId,
     IReadOnlyList<string> MenuItemKeys,
     DateTimeOffset UpdatedAt);
+
+public sealed record ManageableUserModel(
+    Guid Id,
+    Guid? TenantId,
+    Guid RoleId,
+    string Role,
+    string FullName,
+    string Email,
+    string? PhoneNumber,
+    Guid? CreatedByUserId,
+    bool IsActive,
+    bool IsEmailVerified);
 
 public sealed class AssignUserMenuModel
 {
@@ -168,6 +187,9 @@ public sealed class UpdateNavigationItemModel
 public sealed record NavigationIconModel(
     Guid Id,
     string Key,
+    string LabelEn,
+    string LabelUr,
+    string? CssClass,
     string Symbol,
     string? Description,
     bool IsActive);
@@ -175,6 +197,9 @@ public sealed record NavigationIconModel(
 public sealed class CreateNavigationIconModel
 {
     public string Key { get; set; } = string.Empty;
+    public string LabelEn { get; set; } = string.Empty;
+    public string LabelUr { get; set; } = string.Empty;
+    public string? CssClass { get; set; }
     public string Symbol { get; set; } = string.Empty;
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
@@ -182,6 +207,9 @@ public sealed class CreateNavigationIconModel
 
 public sealed class UpdateNavigationIconModel
 {
+    public string LabelEn { get; set; } = string.Empty;
+    public string LabelUr { get; set; } = string.Empty;
+    public string? CssClass { get; set; }
     public string Symbol { get; set; } = string.Empty;
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;

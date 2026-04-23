@@ -5,6 +5,7 @@
 @using System.Text.Json
 @inject HealthCareApiClient ApiClient
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <PageTitle>System Configuration</PageTitle>
 
@@ -14,6 +15,7 @@
         <h1>System Configuration</h1>
     </div>
     <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick='() => Navigation.NavigateTo("/admin/navigation-studio")'>Navigation Studio</button>
         <button class="secondary-button" type="button" @onclick="LoadNavigationConfigurationAsync" disabled="@IsBusy">Reload Navigation</button>
         <button class="primary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Refresh Settings</button>
     </div>
@@ -258,6 +260,18 @@
                     <InputText @bind-Value="CreateIcon.Key" />
                 </label>
                 <label>
+                    Icon Label EN
+                    <InputText @bind-Value="CreateIcon.LabelEn" />
+                </label>
+                <label>
+                    Icon Label UR
+                    <InputText @bind-Value="CreateIcon.LabelUr" />
+                </label>
+                <label>
+                    Icon CSS
+                    <InputText @bind-Value="CreateIcon.CssClass" />
+                </label>
+                <label>
                     Symbol
                     <InputText @bind-Value="CreateIcon.Symbol" />
                 </label>
@@ -272,8 +286,8 @@
                 {
                     <div class="table-row">
                         <span>@icon.Key</span>
-                        <span>@icon.Symbol</span>
-                        <span>@icon.Description</span>
+                        <span>@icon.LabelEn / @icon.LabelUr</span>
+                        <span>@(string.IsNullOrWhiteSpace(icon.CssClass) ? icon.Symbol : icon.CssClass)</span>
                         <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationIconAsync(icon.Id)" disabled="@IsBusy">Delete</button>
                     </div>
                 }

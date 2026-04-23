@@ -3,6 +3,7 @@ using System.Text;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Consultations;
+using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -13,9 +14,11 @@ namespace HealthCareMS.Infrastructure.Consultations;
 public sealed class ConsultationSessionService(
     HealthCareDbContext dbContext,
     IOptions<ConsultationSessionOptions> options,
+    IApplicationLinkBuilder? applicationLinkBuilder = null,
     IConsultationSessionNotifier? notifier = null) : IConsultationSessionService
 {
     private readonly ConsultationSessionOptions options = options.Value;
+    private readonly IApplicationLinkBuilder? applicationLinkBuilder = applicationLinkBuilder;
 
     public async Task<Result<ConsultationSessionResponse>> StartAsync(
         StartConsultationSessionRequest request,
@@ -210,9 +213,14 @@ public sealed class ConsultationSessionService(
 
     private string BuildMeetingLink(Guid appointmentId)
     {
+        if (applicationLinkBuilder is not null)
+        {
+            return applicationLinkBuilder.BuildConsultationWaitingRoomUrl(appointmentId);
+        }
+
         if (string.IsNullOrWhiteSpace(options.ClientBaseUrl))
         {
-            throw new InvalidOperationException("Agora:ClientBaseUrl configuration is required.");
+            throw new InvalidOperationException("Agora:ClientBaseUrl or ApplicationLinks:ClientBaseUrl configuration is required.");
         }
 
         var baseUrl = options.ClientBaseUrl.TrimEnd('/');

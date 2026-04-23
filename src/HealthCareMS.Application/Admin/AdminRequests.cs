@@ -44,11 +44,17 @@ public sealed record UpdateNavigationItemRequest(
 
 public sealed record CreateNavigationIconRequest(
     string Key,
+    string LabelEn,
+    string LabelUr,
+    string? CssClass,
     string Symbol,
     string? Description,
     bool IsActive = true);
 
 public sealed record UpdateNavigationIconRequest(
+    string LabelEn,
+    string LabelUr,
+    string? CssClass,
     string Symbol,
     string? Description,
     bool IsActive);

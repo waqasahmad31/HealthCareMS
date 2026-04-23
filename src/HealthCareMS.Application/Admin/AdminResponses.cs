@@ -83,6 +83,7 @@ public sealed record NavigationMenuItemResponse(
     string Key,
     string Label,
     string Icon,
+    string? IconLabel,
     string Route,
     int SortOrder,
     IReadOnlyList<NavigationMenuItemResponse> Children);
@@ -101,6 +102,9 @@ public sealed record NavigationGroupResponse(
 public sealed record NavigationIconResponse(
     Guid Id,
     string Key,
+    string LabelEn,
+    string LabelUr,
+    string? CssClass,
     string Symbol,
     string? Description,
     bool IsActive);

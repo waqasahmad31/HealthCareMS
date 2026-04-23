@@ -14,7 +14,6 @@ public sealed class IdentityManagementService(
     ICurrentUser currentUser,
     IPasswordHasher passwordHasher) : IIdentityManagementService
 {
-    private const string NavigationSettingKey = "Platform.Navigation.MenuConfigJson";
     private const string NavigationAssignmentSettingPrefix = "Navigation.Assignment.User.";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public async Task<IReadOnlyList<PermissionResponse>> GetPermissionsAsync(CancellationToken cancellationToken)
@@ -177,6 +176,43 @@ public sealed class IdentityManagementService(
         return Result<PermissionGrantResponse>.Failure(new Error("PERMISSION_TARGET_INVALID", "TargetType must be Role or User."));
     }
 
+    public async Task<IReadOnlyList<ManageableUserResponse>> GetManageableUsersAsync(string? search, CancellationToken cancellationToken)
+    {
+        var query = dbContext.Users
+            .AsNoTracking()
+            .Include(x => x.Role)
+            .Where(x => x.IsActive);
+
+        if (!currentUser.IsSuperAdmin)
+        {
+            if (!currentUser.UserId.HasValue)
+            {
+                return [];
+            }
+
+            query = query.Where(x => x.TenantId == currentUser.TenantId && x.CreatedByUserId == currentUser.UserId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalized = search.Trim().ToLowerInvariant();
+            query = query.Where(x =>
+                x.FirstName.ToLower().Contains(normalized)
+                || x.LastName.ToLower().Contains(normalized)
+                || x.Email.ToLower().Contains(normalized)
+                || x.Role.Name.ToLower().Contains(normalized));
+        }
+
+        var users = await query
+            .OrderBy(x => x.Role.Name)
+            .ThenBy(x => x.LastName)
+            .ThenBy(x => x.FirstName)
+            .Take(250)
+            .ToListAsync(cancellationToken);
+
+        return users.Select(MapManageableUser).ToArray();
+    }
+
     public async Task<Result<UserMenuAssignmentResponse>> GetUserMenuAssignmentAsync(Guid userId, CancellationToken cancellationToken)
     {
         var targetUser = await dbContext.Users
@@ -238,7 +274,9 @@ public sealed class IdentityManagementService(
                 $"Cannot assign menus outside your ceiling: {string.Join(", ", invalidKeys)}."));
         }
 
-        await UpsertUserAssignmentAsync(userId, menuItemKeys, cancellationToken);
+        var activeItems = await GetActiveNavigationItemsAsync(cancellationToken);
+        var expandedKeys = ExpandKeysWithAncestors(activeItems, menuItemKeys);
+        await ReplaceUserAssignmentsAsync(userId, expandedKeys, cancellationToken);
         var saved = await ReadUserAssignmentAsync(userId, cancellationToken);
         return Result<UserMenuAssignmentResponse>.Success(new UserMenuAssignmentResponse(
             userId,
@@ -437,10 +475,7 @@ public sealed class IdentityManagementService(
 
     private async Task<Result<IReadOnlySet<string>>> GetAssignableMenuKeysForCurrentUserAsync(CancellationToken cancellationToken)
     {
-        var items = await dbContext.NavigationItems
-            .AsNoTracking()
-            .Where(x => x.IsActive)
-            .ToListAsync(cancellationToken);
+        var items = await GetActiveNavigationItemsAsync(cancellationToken);
         if (items.Count == 0)
         {
             return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
@@ -462,11 +497,39 @@ public sealed class IdentityManagementService(
         return Result<IReadOnlySet<string>>.Success(keys);
     }
 
+    private async Task<IReadOnlyList<NavigationItem>> GetActiveNavigationItemsAsync(CancellationToken cancellationToken)
+    {
+        return await dbContext.NavigationItems
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(cancellationToken);
+    }
+
     private async Task<AssignmentReadModel> ReadUserAssignmentAsync(Guid userId, CancellationToken cancellationToken)
     {
         if (userId == Guid.Empty)
         {
             return new AssignmentReadModel([], DateTimeOffset.UtcNow);
+        }
+
+        var activeItems = await GetActiveNavigationItemsAsync(cancellationToken);
+        var tableAssignments = await dbContext.UserNavigationAssignments
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Include(x => x.NavigationItem)
+            .OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        if (tableAssignments.Count > 0)
+        {
+            var keys = ExpandKeysWithAncestors(activeItems, tableAssignments.Select(x => x.NavigationItem.Key));
+            var updatedAt = tableAssignments
+                .Select(x => x.UpdatedAt ?? x.CreatedAt)
+                .OrderByDescending(x => x)
+                .First();
+
+            return new AssignmentReadModel(keys, updatedAt);
         }
 
         var settingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
@@ -481,11 +544,13 @@ public sealed class IdentityManagementService(
         try
         {
             var payload = JsonSerializer.Deserialize<UserNavigationAssignmentPayload>(setting.Value, JsonOptions);
-            var keys = (payload?.MenuItemKeys ?? [])
+            var keys = ExpandKeysWithAncestors(
+                activeItems,
+                (payload?.MenuItemKeys ?? [])
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Select(x => x.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+                .ToArray());
             return new AssignmentReadModel(keys, setting.UpdatedAt ?? setting.CreatedAt);
         }
         catch (JsonException)
@@ -494,29 +559,57 @@ public sealed class IdentityManagementService(
         }
     }
 
-    private async Task UpsertUserAssignmentAsync(Guid userId, IReadOnlyList<string> menuItemKeys, CancellationToken cancellationToken)
+    private async Task ReplaceUserAssignmentsAsync(Guid userId, IReadOnlyList<string> menuItemKeys, CancellationToken cancellationToken)
     {
-        var settingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
-        var setting = await dbContext.SystemSettings
-            .SingleOrDefaultAsync(x => x.SettingKey == settingKey, cancellationToken);
-        var value = JsonSerializer.Serialize(new UserNavigationAssignmentPayload(menuItemKeys), JsonOptions);
-        if (setting is null)
+        var keys = menuItemKeys
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var items = await dbContext.NavigationItems
+            .Where(x => keys.Contains(x.Key))
+            .Select(x => new { x.Id, x.Key })
+            .ToListAsync(cancellationToken);
+
+        var targetItemIds = items.Select(x => x.Id).ToHashSet();
+        var existingAssignments = await dbContext.UserNavigationAssignments
+            .Where(x => x.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        var toRemove = existingAssignments
+            .Where(x => !targetItemIds.Contains(x.NavigationItemId))
+            .ToList();
+        if (toRemove.Count > 0)
         {
-            dbContext.SystemSettings.Add(new SystemSetting
-            {
-                SettingKey = settingKey,
-                GroupName = "Platform",
-                DisplayName = $"Menu assignment for user {userId}",
-                Value = value,
-                ValueType = "Json",
-                Description = "User-level menu assignment for permission-based navigation.",
-                IsEditable = true
-            });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return;
+            dbContext.UserNavigationAssignments.RemoveRange(toRemove);
         }
 
-        setting.Value = value;
+        var existingItemIds = existingAssignments
+            .Where(x => !x.IsDeleted)
+            .Select(x => x.NavigationItemId)
+            .ToHashSet();
+        var toAdd = items
+            .Where(x => !existingItemIds.Contains(x.Id))
+            .Select(x => new UserNavigationAssignment
+            {
+                UserId = userId,
+                NavigationItemId = x.Id
+            })
+            .ToList();
+        if (toAdd.Count > 0)
+        {
+            dbContext.UserNavigationAssignments.AddRange(toAdd);
+        }
+
+        var legacySettingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
+        var legacySetting = await dbContext.SystemSettings
+            .SingleOrDefaultAsync(x => x.SettingKey == legacySettingKey, cancellationToken);
+        if (legacySetting is not null)
+        {
+            dbContext.SystemSettings.Remove(legacySetting);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -545,6 +638,21 @@ public sealed class IdentityManagementService(
             user.IsActive,
             user.IsEmailVerified,
             user.UserPermissions.Where(x => x.IsGranted).Select(x => x.Permission.PermissionKey).OrderBy(x => x).ToArray());
+    }
+
+    private static ManageableUserResponse MapManageableUser(ApplicationUser user)
+    {
+        return new ManageableUserResponse(
+            user.Id,
+            user.TenantId,
+            user.RoleId,
+            user.Role.Name,
+            user.FullName,
+            user.Email,
+            user.PhoneNumber,
+            user.CreatedByUserId,
+            user.IsActive,
+            user.IsEmailVerified);
     }
 
     private static PermissionGrantResponse ToGrantResponse(
@@ -627,6 +735,31 @@ public sealed class IdentityManagementService(
     private sealed record UserNavigationAssignmentPayload(IReadOnlyList<string> MenuItemKeys);
 
     private sealed record AssignmentReadModel(IReadOnlyList<string> MenuItemKeys, DateTimeOffset UpdatedAt);
+
+    private static IReadOnlyList<string> ExpandKeysWithAncestors(IReadOnlyList<NavigationItem> items, IEnumerable<string> requestedKeys)
+    {
+        var byKey = items.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
+        var byId = items.ToDictionary(x => x.Id);
+        var output = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in requestedKeys.Where(x => !string.IsNullOrWhiteSpace(x)))
+        {
+            if (!byKey.TryGetValue(key, out var item))
+            {
+                continue;
+            }
+
+            output.Add(item.Key);
+            var parentId = item.ParentItemId;
+            while (parentId.HasValue && byId.TryGetValue(parentId.Value, out var parent))
+            {
+                output.Add(parent.Key);
+                parentId = parent.ParentItemId;
+            }
+        }
+
+        return output.OrderBy(x => x).ToArray();
+    }
 
     private static IReadOnlyList<string> ReadPermissions(string json)
     {

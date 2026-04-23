@@ -2,6 +2,7 @@
 @inject HealthCareApiClient ApiClient
 @inject AppCultureService CultureService
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -51,6 +52,7 @@
     protected override async Task OnInitializedAsync()
     {
         culture = CultureService.CurrentCulture;
+        CultureService.Changed += HandleCultureChanged;
         if (IsLoginRoute())
         {
             MenuGroups = [];
@@ -70,6 +72,13 @@
         culture = string.Equals(value, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en";
         await CultureService.SetCultureAsync(culture);
         await LoadMenuAsync();
+    }
+
+    private async void HandleCultureChanged()
+    {
+        culture = CultureService.CurrentCulture;
+        await InvokeAsync(LoadMenuAsync);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadMenuAsync()
@@ -128,6 +137,7 @@
             contentBuilder.OpenElement(innerSeq++, "span");
             contentBuilder.AddAttribute(innerSeq++, "class", "nav-symbol");
             contentBuilder.AddAttribute(innerSeq++, "aria-hidden", "true");
+            contentBuilder.AddAttribute(innerSeq++, "title", item.IconLabel ?? item.Label);
             if (LooksLikeIconCssClass(item.Icon))
             {
                 contentBuilder.OpenElement(innerSeq++, "i");
@@ -136,7 +146,7 @@
             }
             else
             {
-                contentBuilder.AddContent(innerSeq++, string.IsNullOrWhiteSpace(item.Icon) ? "•" : item.Icon);
+                contentBuilder.AddContent(innerSeq++, string.IsNullOrWhiteSpace(item.Icon) ? "*" : item.Icon);
             }
             contentBuilder.CloseElement();
             contentBuilder.AddContent(innerSeq++, $" {item.Label}");
@@ -164,5 +174,10 @@
             || icon.Contains("far ", StringComparison.OrdinalIgnoreCase)
             || icon.Contains("fal ", StringComparison.OrdinalIgnoreCase)
             || icon.Contains("fab ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void Dispose()
+    {
+        CultureService.Changed -= HandleCultureChanged;
     }
 }

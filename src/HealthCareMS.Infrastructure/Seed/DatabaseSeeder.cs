@@ -324,15 +324,15 @@ public sealed class DatabaseSeeder(
         if (!await dbContext.NavigationIcons.AnyAsync(cancellationToken))
         {
             dbContext.NavigationIcons.AddRange(
-                new NavigationIcon { Key = "dashboard", Symbol = "D", Description = "Dashboard" },
-                new NavigationIcon { Key = "notifications", Symbol = "N", Description = "Notifications" },
-                new NavigationIcon { Key = "tenants", Symbol = "T", Description = "Tenants" },
-                new NavigationIcon { Key = "doctors", Symbol = "V", Description = "Doctors" },
-                new NavigationIcon { Key = "config", Symbol = "K", Description = "Configuration" },
-                new NavigationIcon { Key = "doctor-portal", Symbol = "P", Description = "Doctor Portal" },
-                new NavigationIcon { Key = "patient-portal", Symbol = "U", Description = "Patient Portal" },
-                new NavigationIcon { Key = "pharmacy", Symbol = "R", Description = "Pharmacy" },
-                new NavigationIcon { Key = "lab", Symbol = "L", Description = "Laboratory" });
+                new NavigationIcon { Key = "dashboard", LabelEn = "Dashboard", LabelUr = "ڈیش بورڈ", CssClass = "bi bi-grid-1x2-fill", Symbol = "D", Description = "Dashboard" },
+                new NavigationIcon { Key = "notifications", LabelEn = "Notifications", LabelUr = "نوٹیفیکیشنز", CssClass = "bi bi-bell-fill", Symbol = "N", Description = "Notifications" },
+                new NavigationIcon { Key = "tenants", LabelEn = "Tenants", LabelUr = "ٹیننٹس", CssClass = "bi bi-buildings-fill", Symbol = "T", Description = "Tenants" },
+                new NavigationIcon { Key = "doctors", LabelEn = "Doctors", LabelUr = "ڈاکٹرز", CssClass = "bi bi-person-badge-fill", Symbol = "V", Description = "Doctors" },
+                new NavigationIcon { Key = "config", LabelEn = "Configuration", LabelUr = "کنفیگریشن", CssClass = "bi bi-sliders2", Symbol = "K", Description = "Configuration" },
+                new NavigationIcon { Key = "doctor-portal", LabelEn = "Doctor Portal", LabelUr = "ڈاکٹر پورٹل", CssClass = "bi bi-heart-pulse-fill", Symbol = "P", Description = "Doctor Portal" },
+                new NavigationIcon { Key = "patient-portal", LabelEn = "Patient Portal", LabelUr = "پیشنٹ پورٹل", CssClass = "bi bi-person-lines-fill", Symbol = "U", Description = "Patient Portal" },
+                new NavigationIcon { Key = "pharmacy", LabelEn = "Pharmacy", LabelUr = "فارمیسی", CssClass = "bi bi-capsule-pill", Symbol = "R", Description = "Pharmacy" },
+                new NavigationIcon { Key = "lab", LabelEn = "Laboratory", LabelUr = "لیبارٹری", CssClass = "bi bi-clipboard2-pulse-fill", Symbol = "L", Description = "Laboratory" });
             await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
@@ -570,7 +570,7 @@ public sealed class DatabaseSeeder(
                 ReasonForVisit = "Seeded checkup",
                 ConsultationFee = doctor.ConsultationFee,
                 PaymentStatus = PaymentStatus.Paid,
-                MeetingLink = "https://meeting.seed.local/consultation"
+                MeetingLink = BuildSeedMeetingLink()
             };
             dbContext.Appointments.Add(appointment);
         }
@@ -615,7 +615,7 @@ public sealed class DatabaseSeeder(
                 PatientId = patient.Id,
                 DoctorId = doctor.Id,
                 ChannelName = "seed-consultation-channel",
-                MeetingLink = appointment.MeetingLink ?? "https://meeting.seed.local/consultation",
+                MeetingLink = appointment.MeetingLink ?? BuildSeedMeetingLink(),
                 LastTokenIssuedAt = DateTimeOffset.UtcNow
             });
         }
@@ -988,6 +988,14 @@ public sealed class DatabaseSeeder(
             Description = description,
             IsEditable = true
         };
+    }
+
+    private string BuildSeedMeetingLink()
+    {
+        var baseUrl = configuration[$"{ApplicationLinkOptions.SectionName}:ClientBaseUrl"]?.TrimEnd('/');
+        return string.IsNullOrWhiteSpace(baseUrl)
+            ? "https://meeting.seed.local/consultation"
+            : $"{baseUrl}/consultation/waiting-room/seed-demo";
     }
 }
 

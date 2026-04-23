@@ -16,6 +16,7 @@ using HealthCareMS.Application.Notifications;
 using HealthCareMS.Application.Pharmacy;
 using HealthCareMS.Infrastructure;
 using HealthCareMS.Infrastructure.Authentication;
+using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Seed;
 using HealthCareMS.Shared.Api;
 using HealthCareMS.Shared.Common;
@@ -72,8 +73,16 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
     {
+        var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        var clientBaseUrl = builder.Configuration[$"{ApplicationLinkOptions.SectionName}:ClientBaseUrl"];
+        var origins = configuredOrigins is { Length: > 0 }
+            ? configuredOrigins
+            : string.IsNullOrWhiteSpace(clientBaseUrl)
+                ? []
+                : [clientBaseUrl];
+
         policy
-            .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["https://localhost:5002"])
+            .WithOrigins(origins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
