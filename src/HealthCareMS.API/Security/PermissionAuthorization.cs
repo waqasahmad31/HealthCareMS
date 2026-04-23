@@ -25,7 +25,13 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
         AuthorizationHandlerContext context,
         PermissionRequirement requirement)
     {
-        var permissions = context.User.FindAll("Permission").Select(x => x.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var permissions = context.User.Claims
+            .Where(claim =>
+                string.Equals(claim.Type, "Permission", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(claim.Type, "permission", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(claim.Type, "scope", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         if (permissions.Contains(PermissionKeys.System.SuperAdminAll) || permissions.Contains(requirement.PermissionKey))
         {

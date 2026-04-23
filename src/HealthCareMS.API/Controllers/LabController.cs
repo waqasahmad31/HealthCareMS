@@ -21,19 +21,19 @@ public sealed class LabController(ILabService labService) : ApiControllerBase
     [HttpPost("tests/import")]
     [RequirePermission(PermissionKeys.Lab.ResultsEntry)]
     [RequestSizeLimit(2 * 1024 * 1024)]
+    [Consumes("multipart/form-data")]
     public async Task<IActionResult> ImportTests(
-        [FromForm] IFormFile file,
-        [FromForm] Guid? tenantId,
+        [FromForm] ImportLabTestsForm form,
         CancellationToken cancellationToken)
     {
-        if (file is null || file.Length == 0)
+        if (form.File is null || form.File.Length == 0)
         {
             return Fail(new Error("LAB_TEST_CSV_REQUIRED", "CSV file is required."));
         }
 
-        using var reader = new StreamReader(file.OpenReadStream());
+        using var reader = new StreamReader(form.File.OpenReadStream());
         var csv = await reader.ReadToEndAsync(cancellationToken);
-        var result = await labService.ImportTestsCsvAsync(new ImportLabTestsCsvRequest(tenantId, csv), cancellationToken);
+        var result = await labService.ImportTestsCsvAsync(new ImportLabTestsCsvRequest(form.TenantId, csv), cancellationToken);
         return FromResult(result, StatusCodes.Status201Created);
     }
 
@@ -103,5 +103,12 @@ public sealed class LabController(ILabService labService) : ApiControllerBase
     {
         var result = await labService.GetBookingsByAppointmentAsync(appointmentId, cancellationToken);
         return FromResult(result);
+    }
+
+    public sealed class ImportLabTestsForm
+    {
+        public IFormFile? File { get; set; }
+
+        public Guid? TenantId { get; set; }
     }
 }

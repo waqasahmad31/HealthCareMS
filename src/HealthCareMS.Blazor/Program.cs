@@ -19,6 +19,7 @@ var apiEndpoints = new ApiEndpointOptions(apiBaseAddress);
 
 builder.Services.AddSingleton(apiEndpoints);
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiEndpoints.BaseUri });
+builder.Services.AddScoped<AuthSessionService>();
 builder.Services.AddScoped<HealthCareApiClient>();
 builder.Services.AddScoped<AppCultureService>();
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using HealthCareMS.Application.Pharmacy;
 using HealthCareMS.Domain.Consultations;
 using HealthCareMS.Domain.Pharmacy;
+using HealthCareMS.Infrastructure.Caching;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -11,27 +12,38 @@ using QuestPDF.Infrastructure;
 
 namespace HealthCareMS.Infrastructure.Pharmacy;
 
-public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacyService
+public sealed class PharmacyService(
+    HealthCareDbContext dbContext,
+    IDistributedQueryCache queryCache) : IPharmacyService
 {
     public async Task<IReadOnlyList<MedicineResponse>> SearchMedicinesAsync(string? search, CancellationToken cancellationToken)
     {
-        var query = MedicineQuery();
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLowerInvariant();
-            query = query.Where(x =>
-                x.BrandName.ToLower().Contains(term)
-                || x.GenericName.ToLower().Contains(term)
-                || x.DrapRegistrationNumber.ToLower().Contains(term)
-                || x.Barcode.ToLower().Contains(term));
-        }
+        var term = string.IsNullOrWhiteSpace(search) ? "any" : search.Trim().ToLowerInvariant();
+        return await queryCache.GetOrCreateAsync(
+            "pharmacy-medicines",
+            term,
+            TimeSpan.FromMinutes(5),
+            async token =>
+            {
+                var query = MedicineQuery();
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var localTerm = search.Trim().ToLowerInvariant();
+                    query = query.Where(x =>
+                        x.BrandName.ToLower().Contains(localTerm)
+                        || x.GenericName.ToLower().Contains(localTerm)
+                        || x.DrapRegistrationNumber.ToLower().Contains(localTerm)
+                        || x.Barcode.ToLower().Contains(localTerm));
+                }
 
-        var medicines = await query
-            .OrderBy(x => x.BrandName)
-            .Take(100)
-            .ToListAsync(cancellationToken);
+                var medicines = await query
+                    .OrderBy(x => x.BrandName)
+                    .Take(100)
+                    .ToListAsync(token);
 
-        return medicines.Select(Map).ToList();
+                return (IReadOnlyList<MedicineResponse>)medicines.Select(Map).ToList();
+            },
+            cancellationToken);
     }
 
     public async Task<Result<MedicineResponse>> GetMedicineAsync(Guid medicineId, CancellationToken cancellationToken)
@@ -79,6 +91,7 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
 
         dbContext.Medicines.Add(medicine);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("pharmacy-medicines", cancellationToken);
 
         return Result<MedicineResponse>.Success(Map(medicine));
     }
@@ -123,6 +136,7 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         medicine.IsActive = request.IsActive;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("pharmacy-medicines", cancellationToken);
 
         return Result<MedicineResponse>.Success(Map(medicine));
     }
@@ -256,6 +270,7 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
 
         dbContext.Medicines.AddRange(medicines);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("pharmacy-medicines", cancellationToken);
 
         return Result<MedicineImportResponse>.Success(new MedicineImportResponse(
             medicines.Count,

@@ -3,6 +3,7 @@ using HealthCareMS.Application.Doctors;
 using HealthCareMS.Domain.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 
 namespace HealthCareMS.API.Controllers;
 
@@ -21,6 +22,7 @@ public sealed class DoctorsController(
 
     [AllowAnonymous]
     [HttpGet]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> Search(
         [FromQuery] string? specialization,
         [FromQuery] string? city,
@@ -33,6 +35,7 @@ public sealed class DoctorsController(
 
     [AllowAnonymous]
     [HttpGet("{id:guid}")]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await doctorService.GetByIdAsync(id, cancellationToken);
@@ -41,6 +44,7 @@ public sealed class DoctorsController(
 
     [AllowAnonymous]
     [HttpGet("{id:guid}/reviews")]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> GetReviews(Guid id, CancellationToken cancellationToken)
     {
         var reviews = await doctorReviewService.GetDoctorReviewsAsync(id, cancellationToken);
@@ -49,6 +53,7 @@ public sealed class DoctorsController(
 
     [AllowAnonymous]
     [HttpGet("{id:guid}/rating")]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> GetRating(Guid id, CancellationToken cancellationToken)
     {
         var result = await doctorReviewService.GetDoctorRatingSummaryAsync(id, cancellationToken);
@@ -101,6 +106,7 @@ public sealed class DoctorsController(
 
     [AllowAnonymous]
     [HttpGet("{id:guid}/available-slots")]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> GetAvailableSlots(
         Guid id,
         [FromQuery] DateOnly date,

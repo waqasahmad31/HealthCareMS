@@ -2,6 +2,7 @@ using HealthCareMS.Application.Abstractions.Authentication;
 using HealthCareMS.Application.Doctors;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
+using HealthCareMS.Infrastructure.Caching;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +11,8 @@ namespace HealthCareMS.Infrastructure.Doctors;
 
 public sealed class DoctorService(
     HealthCareDbContext dbContext,
-    IPasswordHasher passwordHasher) : IDoctorService
+    IPasswordHasher passwordHasher,
+    IDistributedQueryCache queryCache) : IDoctorService
 {
     public async Task<Result<DoctorResponse>> CreateProfileAsync(CreateDoctorProfileRequest request, CancellationToken cancellationToken)
     {
@@ -81,6 +83,7 @@ public sealed class DoctorService(
 
         dbContext.Doctors.Add(doctor);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("doctor-search", cancellationToken);
 
         return Result<DoctorResponse>.Success(Map(doctor));
     }
@@ -101,32 +104,45 @@ public sealed class DoctorService(
         decimal? maxFee,
         CancellationToken cancellationToken)
     {
-        var query = DoctorQuery().Where(x => x.IsActive && x.IsVerified);
+        var specializationKey = string.IsNullOrWhiteSpace(specialization) ? "any" : specialization.Trim().ToLowerInvariant();
+        var cityKey = string.IsNullOrWhiteSpace(city) ? "any" : city.Trim().ToLowerInvariant();
+        var feeKey = maxFee?.ToString("0.##") ?? "any";
+        var cacheKey = $"{specializationKey}:{cityKey}:{feeKey}";
 
-        if (!string.IsNullOrWhiteSpace(specialization))
-        {
-            var value = specialization.Trim().ToLowerInvariant();
-            query = query.Where(x => x.Specialization.ToLower().Contains(value));
-        }
+        return await queryCache.GetOrCreateAsync(
+            "doctor-search",
+            cacheKey,
+            TimeSpan.FromMinutes(5),
+            async token =>
+            {
+                var query = DoctorQuery().Where(x => x.IsActive && x.IsVerified);
 
-        if (!string.IsNullOrWhiteSpace(city))
-        {
-            var value = city.Trim().ToLowerInvariant();
-            query = query.Where(x => x.City.ToLower().Contains(value));
-        }
+                if (!string.IsNullOrWhiteSpace(specialization))
+                {
+                    var value = specialization.Trim().ToLowerInvariant();
+                    query = query.Where(x => x.Specialization.ToLower().Contains(value));
+                }
 
-        if (maxFee.HasValue)
-        {
-            query = query.Where(x => x.ConsultationFee <= maxFee.Value);
-        }
+                if (!string.IsNullOrWhiteSpace(city))
+                {
+                    var value = city.Trim().ToLowerInvariant();
+                    query = query.Where(x => x.City.ToLower().Contains(value));
+                }
 
-        var doctors = await query
-            .OrderBy(x => x.ConsultationFee)
-            .ThenBy(x => x.User.LastName)
-            .Take(100)
-            .ToListAsync(cancellationToken);
+                if (maxFee.HasValue)
+                {
+                    query = query.Where(x => x.ConsultationFee <= maxFee.Value);
+                }
 
-        return doctors.Select(Map).ToList();
+                var doctors = await query
+                    .OrderBy(x => x.ConsultationFee)
+                    .ThenBy(x => x.User.LastName)
+                    .Take(100)
+                    .ToListAsync(token);
+
+                return (IReadOnlyList<DoctorResponse>)doctors.Select(Map).ToList();
+            },
+            cancellationToken);
     }
 
     public async Task<Result<DoctorResponse>> UpdateProfileAsync(
@@ -157,6 +173,7 @@ public sealed class DoctorService(
         doctor.User.IsActive = request.IsActive;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("doctor-search", cancellationToken);
 
         return Result<DoctorResponse>.Success(Map(doctor));
     }
@@ -176,6 +193,7 @@ public sealed class DoctorService(
 
         doctor.IsVerified = request.IsVerified;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("doctor-search", cancellationToken);
 
         return Result<DoctorResponse>.Success(Map(doctor));
     }
@@ -225,6 +243,7 @@ public sealed class DoctorService(
 
         dbContext.DoctorSchedules.AddRange(activeSchedules);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("doctor-search", cancellationToken);
 
         return Result<IReadOnlyList<DoctorScheduleResponse>>.Success(activeSchedules.Select(Map).ToList());
     }

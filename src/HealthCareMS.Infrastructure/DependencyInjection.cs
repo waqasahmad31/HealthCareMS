@@ -16,6 +16,7 @@ using HealthCareMS.Infrastructure.Authentication;
 using HealthCareMS.Infrastructure.Appointments;
 using HealthCareMS.Infrastructure.Admin;
 using HealthCareMS.Infrastructure.Consultations;
+using HealthCareMS.Infrastructure.Caching;
 using HealthCareMS.Infrastructure.Doctors;
 using HealthCareMS.Infrastructure.Identity;
 using HealthCareMS.Infrastructure.Labs;
@@ -81,6 +82,7 @@ public static class DependencyInjection
         services.AddHttpClient<ISmsSender, TwilioSmsSender>();
         services.AddScoped<IQueueService, QueueService>();
         services.AddScoped<DatabaseSeeder>();
+        services.AddScoped<IDistributedQueryCache, DistributedQueryCache>();
 
         return services;
     }

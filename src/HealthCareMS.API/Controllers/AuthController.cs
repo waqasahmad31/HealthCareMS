@@ -4,6 +4,7 @@ using HealthCareMS.Application.Auth;
 using HealthCareMS.Shared.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HealthCareMS.API.Controllers;
 
@@ -11,6 +12,7 @@ namespace HealthCareMS.API.Controllers;
 public sealed class AuthController(IAuthService authService, ICurrentUser currentUser) : ApiControllerBase
 {
     [AllowAnonymous]
+    [EnableRateLimiting("auth-policy")]
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
@@ -35,6 +37,7 @@ public sealed class AuthController(IAuthService authService, ICurrentUser curren
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting("auth-policy")]
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh(RefreshTokenRequest request, CancellationToken cancellationToken)
     {

@@ -80,27 +80,33 @@ public sealed class ConsultationsController(
     [Authorize]
     [HttpPost("sessions/{sessionId:guid}/chat/attachments")]
     [RequestSizeLimit(10 * 1024 * 1024)]
+    [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadChatAttachment(
         Guid sessionId,
-        [FromForm] string participantType,
-        [FromForm] string senderDisplayName,
-        [FromForm] IFormFile file,
+        [FromForm] UploadChatAttachmentForm form,
         CancellationToken cancellationToken)
     {
-        await using var stream = file.OpenReadStream();
+        await using var stream = form.File.OpenReadStream();
         var result = await consultationChatService.UploadAttachmentAsync(
             sessionId,
             new UploadChatAttachmentRequest(
-                participantType,
-                senderDisplayName,
-                file.FileName,
-                file.ContentType,
-                file.Length,
+                form.ParticipantType,
+                form.SenderDisplayName,
+                form.File.FileName,
+                form.File.ContentType,
+                form.File.Length,
                 stream),
             currentUser.UserId,
             cancellationToken);
 
         return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    public sealed class UploadChatAttachmentForm
+    {
+        public string ParticipantType { get; set; } = string.Empty;
+        public string SenderDisplayName { get; set; } = string.Empty;
+        public IFormFile File { get; set; } = default!;
     }
 
     [Authorize]

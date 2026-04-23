@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\\..\\src\\HealthCareMS.API\\HealthCareMS.API.csproj" />
     <ProjectReference Include="..\..\src\HealthCareMS.Domain\HealthCareMS.Domain.csproj" />
     <ProjectReference Include="..\..\src\HealthCareMS.Application\HealthCareMS.Application.csproj" />
     <ProjectReference Include="..\..\src\HealthCareMS.Shared\HealthCareMS.Shared.csproj" />

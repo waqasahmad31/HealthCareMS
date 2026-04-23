@@ -2,7 +2,8 @@
 @using System.Net.Http.Json
 @using HealthCareMS.Shared.Api
 @inject HttpClient Http
-@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject AuthSessionService AuthSession
 
 <PageTitle>HealthCareMS Auth</PageTitle>
 
@@ -39,6 +40,15 @@
 
     private string StatusClass { get; set; } = "tone-muted";
 
+    protected override async Task OnInitializedAsync()
+    {
+        var token = await AuthSession.GetValidAccessTokenAsync(allowRefresh: true);
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            Navigation.NavigateTo(AuthSession.ResolvePostLoginRoute(), forceLoad: true);
+        }
+    }
+
     private async Task HandleLoginAsync()
     {
         IsBusy = true;
@@ -55,10 +65,10 @@
             var payload = await response.Content.ReadFromJsonAsync<ApiResponse<LoginResponse>>();
             if (response.IsSuccessStatusCode && payload?.Success == true && payload.Data is not null)
             {
-                await JS.InvokeVoidAsync("localStorage.setItem", "HealthCareMS.AccessToken", payload.Data.AccessToken);
-                await JS.InvokeVoidAsync("localStorage.setItem", "HealthCareMS.RefreshToken", payload.Data.RefreshToken);
+                await AuthSession.StoreSessionAsync(payload.Data.AccessToken, payload.Data.RefreshToken);
                 StatusClass = "tone-green";
                 StatusMessage = $"Signed in as {payload.Data.User.FullName}";
+                Navigation.NavigateTo(AuthSession.ResolvePostLoginRoute(), forceLoad: true);
                 return;
             }
 

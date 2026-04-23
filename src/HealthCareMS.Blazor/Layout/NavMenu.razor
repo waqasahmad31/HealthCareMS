@@ -1,6 +1,7 @@
 @using HealthCareMS.Blazor.Services
 @inject HealthCareApiClient ApiClient
 @inject AppCultureService CultureService
+@inject NavigationManager Navigation
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -50,6 +51,12 @@
     protected override async Task OnInitializedAsync()
     {
         culture = CultureService.CurrentCulture;
+        if (IsLoginRoute())
+        {
+            MenuGroups = [];
+            return;
+        }
+
         await LoadMenuAsync();
     }
 
@@ -67,16 +74,41 @@
 
     private async Task LoadMenuAsync()
     {
+        if (IsLoginRoute())
+        {
+            ErrorMessage = null;
+            MenuGroups = [];
+            return;
+        }
+
         ErrorMessage = null;
         var response = await ApiClient.GetAsync<NavigationMenuModel>($"api/v1/system/navigation?culture={culture}");
         if (response?.Success != true || response.Data is null)
         {
+            if (string.Equals(response?.Error?.Code, "HTTP_401", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(response?.Error?.Code, "HTTP_403", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(response?.Error?.Code, "CLIENT_EMPTY_RESPONSE", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!IsLoginRoute())
+                {
+                    Navigation.NavigateTo("/login", forceLoad: true);
+                }
+
+                return;
+            }
+
             ErrorMessage = "Navigation could not be loaded.";
             MenuGroups = [];
             return;
         }
 
         MenuGroups = response.Data.Groups.OrderBy(x => x.SortOrder).ToList();
+    }
+
+    private bool IsLoginRoute()
+    {
+        var relative = Navigation.ToBaseRelativePath(Navigation.Uri);
+        return relative.StartsWith("login", StringComparison.OrdinalIgnoreCase);
     }
 
     private RenderFragment RenderMenuItem(NavigationMenuItemModel item, int depth) => builder =>
@@ -96,7 +128,16 @@
             contentBuilder.OpenElement(innerSeq++, "span");
             contentBuilder.AddAttribute(innerSeq++, "class", "nav-symbol");
             contentBuilder.AddAttribute(innerSeq++, "aria-hidden", "true");
-            contentBuilder.AddContent(innerSeq++, item.Icon);
+            if (LooksLikeIconCssClass(item.Icon))
+            {
+                contentBuilder.OpenElement(innerSeq++, "i");
+                contentBuilder.AddAttribute(innerSeq++, "class", item.Icon);
+                contentBuilder.CloseElement();
+            }
+            else
+            {
+                contentBuilder.AddContent(innerSeq++, string.IsNullOrWhiteSpace(item.Icon) ? "•" : item.Icon);
+            }
             contentBuilder.CloseElement();
             contentBuilder.AddContent(innerSeq++, $" {item.Label}");
         }));
@@ -108,4 +149,20 @@
             builder.AddContent(sequence++, RenderMenuItem(child, depth + 1));
         }
     };
+
+    private static bool LooksLikeIconCssClass(string? icon)
+    {
+        if (string.IsNullOrWhiteSpace(icon))
+        {
+            return false;
+        }
+
+        return icon.Contains("bi-", StringComparison.OrdinalIgnoreCase)
+            || icon.Contains("fa-", StringComparison.OrdinalIgnoreCase)
+            || icon.Contains("fa ", StringComparison.OrdinalIgnoreCase)
+            || icon.Contains("fas ", StringComparison.OrdinalIgnoreCase)
+            || icon.Contains("far ", StringComparison.OrdinalIgnoreCase)
+            || icon.Contains("fal ", StringComparison.OrdinalIgnoreCase)
+            || icon.Contains("fab ", StringComparison.OrdinalIgnoreCase);
+    }
 }

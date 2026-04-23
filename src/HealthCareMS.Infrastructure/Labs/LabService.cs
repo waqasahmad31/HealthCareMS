@@ -2,6 +2,7 @@ using System.Globalization;
 using HealthCareMS.Application.Labs;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Labs;
+using HealthCareMS.Infrastructure.Caching;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,9 @@ using QuestPDF.Infrastructure;
 
 namespace HealthCareMS.Infrastructure.Labs;
 
-public sealed class LabService(HealthCareDbContext dbContext) : ILabService
+public sealed class LabService(
+    HealthCareDbContext dbContext,
+    IDistributedQueryCache queryCache) : ILabService
 {
     private const int MinimumCatalogueSize = 120;
 
@@ -29,24 +32,32 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
     public async Task<IReadOnlyList<LabTestResponse>> SearchTestsAsync(string? search, CancellationToken cancellationToken)
     {
         await EnsureDefaultLabTestsAsync(cancellationToken);
+        var term = string.IsNullOrWhiteSpace(search) ? "any" : search.Trim().ToLowerInvariant();
+        return await queryCache.GetOrCreateAsync(
+            "lab-catalog",
+            $"tests:{term}",
+            TimeSpan.FromMinutes(10),
+            async token =>
+            {
+                var query = dbContext.LabTests.AsNoTracking().Where(x => x.IsActive);
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var localTerm = search.Trim().ToLowerInvariant();
+                    query = query.Where(x =>
+                        x.TestCode.ToLower().Contains(localTerm)
+                        || x.TestName.ToLower().Contains(localTerm)
+                        || x.Category.ToLower().Contains(localTerm));
+                }
 
-        var query = dbContext.LabTests.AsNoTracking().Where(x => x.IsActive);
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLowerInvariant();
-            query = query.Where(x =>
-                x.TestCode.ToLower().Contains(term)
-                || x.TestName.ToLower().Contains(term)
-                || x.Category.ToLower().Contains(term));
-        }
+                var tests = await query
+                    .OrderBy(x => x.Category)
+                    .ThenBy(x => x.TestName)
+                    .Take(200)
+                    .ToListAsync(token);
 
-        var tests = await query
-            .OrderBy(x => x.Category)
-            .ThenBy(x => x.TestName)
-            .Take(200)
-            .ToListAsync(cancellationToken);
-
-        return tests.Select(Map).ToList();
+                return (IReadOnlyList<LabTestResponse>)tests.Select(Map).ToList();
+            },
+            cancellationToken);
     }
 
     public async Task<Result<LabTestImportResponse>> ImportTestsCsvAsync(
@@ -129,6 +140,7 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
 
         dbContext.LabTests.AddRange(tests);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("lab-catalog", cancellationToken);
 
         return Result<LabTestImportResponse>.Success(new LabTestImportResponse(
             tests.Count,
@@ -141,23 +153,34 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
     {
         await EnsureDefaultLabTestsAsync(cancellationToken);
 
-        var query = PanelQuery().AsNoTracking().Where(x => x.IsActive);
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLowerInvariant();
-            query = query.Where(x =>
-                x.PanelCode.ToLower().Contains(term)
-                || x.PanelName.ToLower().Contains(term)
-                || x.Category.ToLower().Contains(term));
-        }
+        var term = string.IsNullOrWhiteSpace(search) ? "any" : search.Trim().ToLowerInvariant();
+        var panels = await queryCache.GetOrCreateAsync(
+            "lab-catalog",
+            $"panels:{term}",
+            TimeSpan.FromMinutes(10),
+            async token =>
+            {
+                var query = PanelQuery().AsNoTracking().Where(x => x.IsActive);
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var localTerm = search.Trim().ToLowerInvariant();
+                    query = query.Where(x =>
+                        x.PanelCode.ToLower().Contains(localTerm)
+                        || x.PanelName.ToLower().Contains(localTerm)
+                        || x.Category.ToLower().Contains(localTerm));
+                }
 
-        var panels = await query
-            .OrderBy(x => x.Category)
-            .ThenBy(x => x.PanelName)
-            .Take(100)
-            .ToListAsync(cancellationToken);
+                var resolvedPanels = await query
+                    .OrderBy(x => x.Category)
+                    .ThenBy(x => x.PanelName)
+                    .Take(100)
+                    .ToListAsync(token);
 
-        return Result<IReadOnlyList<LabPanelResponse>>.Success(panels.Select(Map).ToList());
+                return (IReadOnlyList<LabPanelResponse>)resolvedPanels.Select(Map).ToList();
+            },
+            cancellationToken);
+
+        return Result<IReadOnlyList<LabPanelResponse>>.Success(panels);
     }
 
     public async Task<Result<LabPanelResponse>> CreatePanelAsync(
@@ -209,6 +232,7 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
 
         dbContext.LabPanels.Add(panel);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await queryCache.InvalidateNamespaceAsync("lab-catalog", cancellationToken);
 
         var saved = await PanelQuery().SingleAsync(x => x.Id == panel.Id, cancellationToken);
         return Result<LabPanelResponse>.Success(Map(saved));

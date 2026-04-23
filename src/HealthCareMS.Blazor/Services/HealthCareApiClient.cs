@@ -5,14 +5,14 @@ using Microsoft.JSInterop;
 
 namespace HealthCareMS.Blazor.Services;
 
-public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRuntime)
+public sealed class HealthCareApiClient(
+    HttpClient httpClient,
+    IJSRuntime jsRuntime,
+    AuthSessionService authSession)
 {
     public async Task<ApiResponse<T>?> GetAsync<T>(string url, CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+        return await SendAsync<T>(HttpMethod.Get, url, content: null, cancellationToken);
     }
 
     public async Task<ApiResponse<TResponse>?> PostAsync<TRequest, TResponse>(
@@ -20,29 +20,17 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         TRequest payload,
         CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, url)
-        {
-            Content = JsonContent.Create(payload)
-        };
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<TResponse>>(cancellationToken);
+        return await SendAsync<TResponse>(HttpMethod.Post, url, JsonContent.Create(payload), cancellationToken);
     }
 
     public async Task<ApiResponse<T>?> PostAsync<T>(string url, CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+        return await SendAsync<T>(HttpMethod.Post, url, content: null, cancellationToken);
     }
 
     public async Task<ApiResponse<T>?> PutAsync<T>(string url, CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Put, url);
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+        return await SendAsync<T>(HttpMethod.Put, url, content: null, cancellationToken);
     }
 
     public async Task<ApiResponse<TResponse>?> PutAsync<TRequest, TResponse>(
@@ -50,21 +38,12 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         TRequest payload,
         CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Put, url)
-        {
-            Content = JsonContent.Create(payload)
-        };
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<TResponse>>(cancellationToken);
+        return await SendAsync<TResponse>(HttpMethod.Put, url, JsonContent.Create(payload), cancellationToken);
     }
 
     public async Task<ApiResponse<T>?> DeleteAsync<T>(string url, CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+        return await SendAsync<T>(HttpMethod.Delete, url, content: null, cancellationToken);
     }
 
     public async Task<ApiResponse<T>?> PostMultipartAsync<T>(
@@ -72,13 +51,7 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         MultipartFormDataContent content,
         CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, url)
-        {
-            Content = content
-        };
-        await AddAuthorizationAsync(request);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+        return await SendAsync<T>(HttpMethod.Post, url, content, cancellationToken);
     }
 
     public async Task<FileDownloadResult> DownloadFileAsync(string url, CancellationToken cancellationToken = default)
@@ -102,7 +75,7 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
 
     private async Task AddAuthorizationAsync(HttpRequestMessage request)
     {
-        var token = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.AccessToken");
+        var token = await authSession.GetValidAccessTokenAsync(allowRefresh: true);
         if (!string.IsNullOrWhiteSpace(token))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -114,6 +87,56 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
             request.Headers.AcceptLanguage.Clear();
             request.Headers.AcceptLanguage.Add(new StringWithQualityHeaderValue(
                 string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en"));
+        }
+    }
+
+    private static ApiResponse<T> Fail<T>(string code, string message)
+    {
+        return ApiResponse<T>.Fail(
+            new Shared.Common.Error(code, message),
+            Guid.NewGuid().ToString("N"));
+    }
+
+    private async Task<ApiResponse<T>> SendAsync<T>(
+        HttpMethod method,
+        string url,
+        HttpContent? content,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(method, url)
+            {
+                Content = content
+            };
+            await AddAuthorizationAsync(request);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                {
+                    await authSession.ClearSessionAsync();
+                }
+
+                return Fail<T>(
+                    $"HTTP_{(int)response.StatusCode}",
+                    $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+            }
+
+            var apiResponse = await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+            return apiResponse ?? Fail<T>("CLIENT_EMPTY_RESPONSE", "The server returned an empty response.");
+        }
+        catch (HttpRequestException ex)
+        {
+            return Fail<T>("CLIENT_NETWORK_ERROR", $"Unable to reach API endpoint: {ex.Message}");
+        }
+        catch (NotSupportedException ex)
+        {
+            return Fail<T>("CLIENT_RESPONSE_UNSUPPORTED", $"Unsupported API response format: {ex.Message}");
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            return Fail<T>("CLIENT_RESPONSE_PARSE_ERROR", $"Unable to parse API response: {ex.Message}");
         }
     }
 }

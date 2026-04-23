@@ -1,4 +1,7 @@
 ﻿@inject AppCultureService CultureService
+@inject AuthSessionService AuthSession
+@inject NavigationManager Navigation
+@implements IDisposable
 
 <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
@@ -8,8 +11,29 @@
 </Router>
 
 @code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await AuthSession.EnsureRouteAccessAsync();
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await CultureService.InitializeAsync();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _ = AuthSession.EnsureRouteAccessAsync();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

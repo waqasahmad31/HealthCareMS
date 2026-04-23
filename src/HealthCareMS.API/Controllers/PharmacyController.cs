@@ -4,6 +4,7 @@ using HealthCareMS.Domain.Identity;
 using HealthCareMS.Shared.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 
 namespace HealthCareMS.API.Controllers;
 
@@ -12,6 +13,7 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
 {
     [HttpGet("medicines")]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> SearchMedicines([FromQuery] string? search, CancellationToken cancellationToken)
     {
         var results = await pharmacyService.SearchMedicinesAsync(search, cancellationToken);
@@ -20,6 +22,7 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
 
     [HttpGet("medicines/{medicineId:guid}")]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> GetMedicine(Guid medicineId, CancellationToken cancellationToken)
     {
         var result = await pharmacyService.GetMedicineAsync(medicineId, cancellationToken);
@@ -220,19 +223,26 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
     [HttpPost("medicines/import")]
     [RequirePermission(PermissionKeys.Pharmacy.MedicinesCreate)]
     [RequestSizeLimit(2 * 1024 * 1024)]
+    [Consumes("multipart/form-data")]
     public async Task<IActionResult> ImportMedicines(
-        [FromForm] IFormFile file,
-        [FromForm] Guid? tenantId,
+        [FromForm] ImportMedicinesForm form,
         CancellationToken cancellationToken)
     {
-        if (file is null || file.Length == 0)
+        if (form.File is null || form.File.Length == 0)
         {
             return Fail(new Error("MEDICINE_CSV_REQUIRED", "CSV file is required."));
         }
 
-        using var reader = new StreamReader(file.OpenReadStream());
+        using var reader = new StreamReader(form.File.OpenReadStream());
         var csv = await reader.ReadToEndAsync(cancellationToken);
-        var result = await pharmacyService.ImportMedicinesCsvAsync(new ImportMedicineCsvRequest(tenantId, csv), cancellationToken);
+        var result = await pharmacyService.ImportMedicinesCsvAsync(new ImportMedicineCsvRequest(form.TenantId, csv), cancellationToken);
         return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    public sealed class ImportMedicinesForm
+    {
+        public IFormFile? File { get; set; }
+
+        public Guid? TenantId { get; set; }
     }
 }

@@ -37,13 +37,27 @@
             return;
         }
 
-        ThemeLabel = await JS.InvokeAsync<string>("healthCareTheme.init");
+        try
+        {
+            ThemeLabel = await JS.InvokeAsync<string>("healthCareTheme.init");
+        }
+        catch (JSException)
+        {
+            ThemeLabel = "Theme";
+        }
         StateHasChanged();
     }
 
     private async Task ToggleThemeAsync()
     {
-        ThemeLabel = await JS.InvokeAsync<string>("healthCareTheme.toggle");
+        try
+        {
+            ThemeLabel = await JS.InvokeAsync<string>("healthCareTheme.toggle");
+        }
+        catch (JSException)
+        {
+            ThemeLabel = "Theme";
+        }
     }
 
     public async ValueTask DisposeAsync()

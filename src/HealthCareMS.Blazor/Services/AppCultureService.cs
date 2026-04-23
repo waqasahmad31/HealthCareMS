@@ -13,8 +13,16 @@ public sealed class AppCultureService(IJSRuntime jsRuntime)
 
     public async Task InitializeAsync()
     {
-        var stored = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-        CurrentCulture = Normalize(stored);
+        try
+        {
+            var stored = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            CurrentCulture = Normalize(stored);
+        }
+        catch (JSException)
+        {
+            CurrentCulture = "en";
+        }
+
         ApplyCulture(CurrentCulture);
     }
 

@@ -1,6 +1,7 @@
 using HealthCareMS.Application.Admin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 
 namespace HealthCareMS.API.Controllers;
 
@@ -9,6 +10,7 @@ public sealed class SystemController(IAdminOperationsService adminOperationsServ
 {
     [AllowAnonymous]
     [HttpGet("ping")]
+    [OutputCache(PolicyName = "PublicGetShort")]
     public IActionResult Ping()
     {
         return OkEnvelope(new

@@ -93,6 +93,11 @@
     transition: transform 0.18s ease;
 }
 
+.nav-symbol i {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
 .nav-item ::deep a:hover .nav-symbol {
     transform: scale(1.06);
 }
