@@ -59,6 +59,14 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         return await response.Content.ReadFromJsonAsync<ApiResponse<TResponse>>(cancellationToken);
     }
 
+    public async Task<ApiResponse<T>?> DeleteAsync<T>(string url, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+        await AddAuthorizationAsync(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
+    }
+
     public async Task<ApiResponse<T>?> PostMultipartAsync<T>(
         string url,
         MultipartFormDataContent content,
@@ -98,6 +106,14 @@ public sealed class HealthCareApiClient(HttpClient httpClient, IJSRuntime jsRunt
         if (!string.IsNullOrWhiteSpace(token))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        var culture = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.Culture");
+        if (!string.IsNullOrWhiteSpace(culture))
+        {
+            request.Headers.AcceptLanguage.Clear();
+            request.Headers.AcceptLanguage.Add(new StringWithQualityHeaderValue(
+                string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en"));
         }
     }
 }

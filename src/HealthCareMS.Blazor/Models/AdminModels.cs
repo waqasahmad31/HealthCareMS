@@ -97,3 +97,92 @@ public sealed class AssignUserMenuModel
 {
     public IReadOnlyList<string> MenuItemKeys { get; set; } = [];
 }
+
+public sealed record NavigationGroupModel(
+    Guid Id,
+    Guid? TenantId,
+    string Key,
+    string LabelEn,
+    string LabelUr,
+    int SortOrder,
+    bool IsActive);
+
+public sealed class CreateNavigationGroupModel
+{
+    public string Key { get; set; } = string.Empty;
+    public string LabelEn { get; set; } = string.Empty;
+    public string LabelUr { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class UpdateNavigationGroupModel
+{
+    public string LabelEn { get; set; } = string.Empty;
+    public string LabelUr { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed record NavigationItemModel(
+    Guid Id,
+    Guid NavigationGroupId,
+    Guid? ParentItemId,
+    string Key,
+    string LabelEn,
+    string LabelUr,
+    string Icon,
+    string Route,
+    int SortOrder,
+    IReadOnlyList<string> RequiredPermissions,
+    bool IsActive,
+    IReadOnlyList<NavigationItemModel> Children);
+
+public sealed class CreateNavigationItemModel
+{
+    public Guid NavigationGroupId { get; set; }
+    public Guid? ParentItemId { get; set; }
+    public string Key { get; set; } = string.Empty;
+    public string LabelEn { get; set; } = string.Empty;
+    public string LabelUr { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
+    public string Route { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public IReadOnlyList<string> RequiredPermissions { get; set; } = [];
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class UpdateNavigationItemModel
+{
+    public Guid NavigationGroupId { get; set; }
+    public Guid? ParentItemId { get; set; }
+    public string LabelEn { get; set; } = string.Empty;
+    public string LabelUr { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
+    public string Route { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public IReadOnlyList<string> RequiredPermissions { get; set; } = [];
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed record NavigationIconModel(
+    Guid Id,
+    string Key,
+    string Symbol,
+    string? Description,
+    bool IsActive);
+
+public sealed class CreateNavigationIconModel
+{
+    public string Key { get; set; } = string.Empty;
+    public string Symbol { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class UpdateNavigationIconModel
+{
+    public string Symbol { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public bool IsActive { get; set; } = true;
+}

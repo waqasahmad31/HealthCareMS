@@ -84,6 +84,37 @@ public sealed record NavigationMenuItemResponse(
     string Label,
     string Icon,
     string Route,
-    int SortOrder);
+    int SortOrder,
+    IReadOnlyList<NavigationMenuItemResponse> Children);
 
 public sealed record NavigationConfigurationResponse(string ConfigurationJson);
+
+public sealed record NavigationGroupResponse(
+    Guid Id,
+    Guid? TenantId,
+    string Key,
+    string LabelEn,
+    string LabelUr,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record NavigationIconResponse(
+    Guid Id,
+    string Key,
+    string Symbol,
+    string? Description,
+    bool IsActive);
+
+public sealed record NavigationItemResponse(
+    Guid Id,
+    Guid NavigationGroupId,
+    Guid? ParentItemId,
+    string Key,
+    string LabelEn,
+    string LabelUr,
+    string Icon,
+    string Route,
+    int SortOrder,
+    IReadOnlyList<string> RequiredPermissions,
+    bool IsActive,
+    IReadOnlyList<NavigationItemResponse> Children);

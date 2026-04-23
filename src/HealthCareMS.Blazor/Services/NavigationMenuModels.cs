@@ -15,4 +15,5 @@ public sealed record NavigationMenuItemModel(
     string Label,
     string Icon,
     string Route,
-    int SortOrder);
+    int SortOrder,
+    IReadOnlyList<NavigationMenuItemModel> Children);

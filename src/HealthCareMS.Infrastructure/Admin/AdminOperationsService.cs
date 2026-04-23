@@ -227,36 +227,38 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         }
 
         await EnsureDefaultSettingsAsync(cancellationToken);
-
-        var configResult = await GetNavigationConfigPayloadAsync(cancellationToken);
-        if (configResult.IsFailure)
-        {
-            return Result<NavigationMenuResponse>.Failure(configResult.Error);
-        }
-
         var normalizedCulture = string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en";
         var assignmentKeys = await GetAssignedMenuKeysAsync(currentUser.UserId!.Value, cancellationToken);
-        var groups = configResult.Value.Groups
+        var groups = await dbContext.NavigationGroups
+            .AsNoTracking()
+            .Include(x => x.Items)
+            .Where(x => x.IsActive)
             .OrderBy(x => x.SortOrder)
-            .Select(x => MapGroup(x, normalizedCulture, assignmentKeys))
+            .ToListAsync(cancellationToken);
+
+        var mapped = groups
+            .Select(x => MapGroupFromEntity(x, normalizedCulture, assignmentKeys))
             .Where(x => x.Items.Count > 0)
             .ToList();
 
-        return Result<NavigationMenuResponse>.Success(new NavigationMenuResponse(normalizedCulture, groups));
+        return Result<NavigationMenuResponse>.Success(new NavigationMenuResponse(normalizedCulture, mapped));
     }
 
     public async Task<Result<NavigationConfigurationResponse>> GetNavigationConfigurationAsync(CancellationToken cancellationToken)
     {
         await EnsureDefaultSettingsAsync(cancellationToken);
-        var setting = await dbContext.SystemSettings
+        var groups = await dbContext.NavigationGroups
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
-        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+            .Include(x => x.Items)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(cancellationToken);
+        if (groups.Count == 0)
         {
             return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
         }
 
-        return Result<NavigationConfigurationResponse>.Success(new NavigationConfigurationResponse(setting.Value));
+        var payload = ToNavigationConfigPayload(groups);
+        return Result<NavigationConfigurationResponse>.Success(new NavigationConfigurationResponse(JsonSerializer.Serialize(payload, JsonOptions)));
     }
 
     public async Task<Result<NavigationConfigurationResponse>> UpdateNavigationConfigurationAsync(
@@ -286,16 +288,273 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
             return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_EMPTY", "Navigation configuration does not contain any groups."));
         }
 
-        var setting = await dbContext.SystemSettings
-            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
-        if (setting is null)
+        var existingItems = await dbContext.NavigationItems.ToListAsync(cancellationToken);
+        dbContext.NavigationItems.RemoveRange(existingItems);
+        var existingGroups = await dbContext.NavigationGroups.ToListAsync(cancellationToken);
+        dbContext.NavigationGroups.RemoveRange(existingGroups);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var groups = new List<NavigationGroup>();
+        var items = new List<(NavigationItem Item, string? ParentKey)>();
+        foreach (var group in parsed.Groups)
         {
-            return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
+            var entity = new NavigationGroup
+            {
+                Key = group.Key,
+                LabelEn = group.Labels.En ?? group.Key,
+                LabelUr = group.Labels.Ur ?? (group.Labels.En ?? group.Key),
+                SortOrder = group.SortOrder,
+                IsActive = true
+            };
+            groups.Add(entity);
+            dbContext.NavigationGroups.Add(entity);
         }
 
-        setting.Value = request.ConfigurationJson.Trim();
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Result<NavigationConfigurationResponse>.Success(new NavigationConfigurationResponse(setting.Value));
+
+        foreach (var group in parsed.Groups)
+        {
+            var groupEntity = groups.First(x => string.Equals(x.Key, group.Key, StringComparison.OrdinalIgnoreCase));
+            foreach (var item in group.Items ?? [])
+            {
+                CollectItemsForImport(groupEntity, item, null, items);
+            }
+        }
+
+        foreach (var itemEntry in items)
+        {
+            dbContext.NavigationItems.Add(itemEntry.Item);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var keyLookup = items.Select(x => x.Item).ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
+        foreach (var itemEntry in items.Where(x => !string.IsNullOrWhiteSpace(x.ParentKey)))
+        {
+            if (!keyLookup.TryGetValue(itemEntry.ParentKey!, out var parent))
+            {
+                continue;
+            }
+
+            itemEntry.Item.ParentItemId = parent.Id;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationConfigurationResponse>.Success(new NavigationConfigurationResponse(request.ConfigurationJson.Trim()));
+    }
+
+    public async Task<IReadOnlyList<NavigationGroupResponse>> GetNavigationGroupsAsync(CancellationToken cancellationToken)
+    {
+        return await dbContext.NavigationGroups
+            .AsNoTracking()
+            .OrderBy(x => x.SortOrder)
+            .Select(x => new NavigationGroupResponse(x.Id, x.TenantId, x.Key, x.LabelEn, x.LabelUr, x.SortOrder, x.IsActive))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Result<NavigationGroupResponse>> CreateNavigationGroupAsync(CreateNavigationGroupRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Key) || string.IsNullOrWhiteSpace(request.LabelEn) || string.IsNullOrWhiteSpace(request.LabelUr))
+        {
+            return Result<NavigationGroupResponse>.Failure(new Error("NAVIGATION_GROUP_INVALID", "Key and labels are required."));
+        }
+
+        var normalizedKey = request.Key.Trim();
+        var exists = await dbContext.NavigationGroups.AnyAsync(x => x.Key == normalizedKey, cancellationToken);
+        if (exists)
+        {
+            return Result<NavigationGroupResponse>.Failure(new Error("NAVIGATION_GROUP_EXISTS", "Navigation group key already exists."));
+        }
+
+        var group = new NavigationGroup
+        {
+            Key = normalizedKey,
+            LabelEn = request.LabelEn.Trim(),
+            LabelUr = request.LabelUr.Trim(),
+            SortOrder = request.SortOrder,
+            IsActive = request.IsActive
+        };
+        dbContext.NavigationGroups.Add(group);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationGroupResponse>.Success(new NavigationGroupResponse(group.Id, group.TenantId, group.Key, group.LabelEn, group.LabelUr, group.SortOrder, group.IsActive));
+    }
+
+    public async Task<Result<NavigationGroupResponse>> UpdateNavigationGroupAsync(Guid groupId, UpdateNavigationGroupRequest request, CancellationToken cancellationToken)
+    {
+        var group = await dbContext.NavigationGroups.SingleOrDefaultAsync(x => x.Id == groupId, cancellationToken);
+        if (group is null)
+        {
+            return Result<NavigationGroupResponse>.Failure(new Error("NAVIGATION_GROUP_NOT_FOUND", "Navigation group was not found."));
+        }
+
+        group.LabelEn = request.LabelEn.Trim();
+        group.LabelUr = request.LabelUr.Trim();
+        group.SortOrder = request.SortOrder;
+        group.IsActive = request.IsActive;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationGroupResponse>.Success(new NavigationGroupResponse(group.Id, group.TenantId, group.Key, group.LabelEn, group.LabelUr, group.SortOrder, group.IsActive));
+    }
+
+    public async Task<Result> DeleteNavigationGroupAsync(Guid groupId, CancellationToken cancellationToken)
+    {
+        var group = await dbContext.NavigationGroups
+            .Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.Id == groupId, cancellationToken);
+        if (group is null)
+        {
+            return Result.Failure(new Error("NAVIGATION_GROUP_NOT_FOUND", "Navigation group was not found."));
+        }
+
+        dbContext.NavigationItems.RemoveRange(group.Items);
+        dbContext.NavigationGroups.Remove(group);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<IReadOnlyList<NavigationItemResponse>> GetNavigationItemsTreeAsync(CancellationToken cancellationToken)
+    {
+        var items = await dbContext.NavigationItems
+            .AsNoTracking()
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(cancellationToken);
+        return BuildNavigationItemTree(items, null);
+    }
+
+    public async Task<Result<NavigationItemResponse>> CreateNavigationItemAsync(CreateNavigationItemRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Key) || string.IsNullOrWhiteSpace(request.LabelEn) || string.IsNullOrWhiteSpace(request.LabelUr))
+        {
+            return Result<NavigationItemResponse>.Failure(new Error("NAVIGATION_ITEM_INVALID", "Key and labels are required."));
+        }
+
+        var groupExists = await dbContext.NavigationGroups.AnyAsync(x => x.Id == request.NavigationGroupId, cancellationToken);
+        if (!groupExists)
+        {
+            return Result<NavigationItemResponse>.Failure(new Error("NAVIGATION_GROUP_NOT_FOUND", "Navigation group was not found."));
+        }
+
+        var normalizedKey = request.Key.Trim();
+        if (await dbContext.NavigationItems.AnyAsync(x => x.Key == normalizedKey, cancellationToken))
+        {
+            return Result<NavigationItemResponse>.Failure(new Error("NAVIGATION_ITEM_EXISTS", "Navigation item key already exists."));
+        }
+
+        var item = new NavigationItem
+        {
+            NavigationGroupId = request.NavigationGroupId,
+            ParentItemId = request.ParentItemId,
+            Key = normalizedKey,
+            LabelEn = request.LabelEn.Trim(),
+            LabelUr = request.LabelUr.Trim(),
+            Icon = string.IsNullOrWhiteSpace(request.Icon) ? "?" : request.Icon.Trim(),
+            Route = request.Route?.Trim() ?? string.Empty,
+            SortOrder = request.SortOrder,
+            RequiredPermissionsJson = JsonSerializer.Serialize((request.RequiredPermissions ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), JsonOptions),
+            IsActive = request.IsActive
+        };
+        dbContext.NavigationItems.Add(item);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationItemResponse>.Success(ToNavigationItemResponse(item, []));
+    }
+
+    public async Task<Result<NavigationItemResponse>> UpdateNavigationItemAsync(Guid itemId, UpdateNavigationItemRequest request, CancellationToken cancellationToken)
+    {
+        var item = await dbContext.NavigationItems.SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken);
+        if (item is null)
+        {
+            return Result<NavigationItemResponse>.Failure(new Error("NAVIGATION_ITEM_NOT_FOUND", "Navigation item was not found."));
+        }
+
+        item.NavigationGroupId = request.NavigationGroupId;
+        item.ParentItemId = request.ParentItemId;
+        item.LabelEn = request.LabelEn.Trim();
+        item.LabelUr = request.LabelUr.Trim();
+        item.Icon = string.IsNullOrWhiteSpace(request.Icon) ? "?" : request.Icon.Trim();
+        item.Route = request.Route?.Trim() ?? string.Empty;
+        item.SortOrder = request.SortOrder;
+        item.RequiredPermissionsJson = JsonSerializer.Serialize((request.RequiredPermissions ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), JsonOptions);
+        item.IsActive = request.IsActive;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationItemResponse>.Success(ToNavigationItemResponse(item, []));
+    }
+
+    public async Task<Result> DeleteNavigationItemAsync(Guid itemId, CancellationToken cancellationToken)
+    {
+        var items = await dbContext.NavigationItems.ToListAsync(cancellationToken);
+        var target = items.SingleOrDefault(x => x.Id == itemId);
+        if (target is null)
+        {
+            return Result.Failure(new Error("NAVIGATION_ITEM_NOT_FOUND", "Navigation item was not found."));
+        }
+
+        var descendantIds = GetDescendantIds(items, itemId);
+        descendantIds.Add(itemId);
+        var toDelete = items.Where(x => descendantIds.Contains(x.Id)).ToList();
+        dbContext.NavigationItems.RemoveRange(toDelete);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<IReadOnlyList<NavigationIconResponse>> GetNavigationIconsAsync(CancellationToken cancellationToken)
+    {
+        return await dbContext.NavigationIcons
+            .AsNoTracking()
+            .OrderBy(x => x.Key)
+            .Select(x => new NavigationIconResponse(x.Id, x.Key, x.Symbol, x.Description, x.IsActive))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Result<NavigationIconResponse>> CreateNavigationIconAsync(CreateNavigationIconRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Key) || string.IsNullOrWhiteSpace(request.Symbol))
+        {
+            return Result<NavigationIconResponse>.Failure(new Error("NAVIGATION_ICON_INVALID", "Key and symbol are required."));
+        }
+
+        var key = request.Key.Trim();
+        if (await dbContext.NavigationIcons.AnyAsync(x => x.Key == key, cancellationToken))
+        {
+            return Result<NavigationIconResponse>.Failure(new Error("NAVIGATION_ICON_EXISTS", "Navigation icon key already exists."));
+        }
+
+        var icon = new NavigationIcon
+        {
+            Key = key,
+            Symbol = request.Symbol.Trim(),
+            Description = request.Description?.Trim(),
+            IsActive = request.IsActive
+        };
+        dbContext.NavigationIcons.Add(icon);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationIconResponse>.Success(new NavigationIconResponse(icon.Id, icon.Key, icon.Symbol, icon.Description, icon.IsActive));
+    }
+
+    public async Task<Result<NavigationIconResponse>> UpdateNavigationIconAsync(Guid iconId, UpdateNavigationIconRequest request, CancellationToken cancellationToken)
+    {
+        var icon = await dbContext.NavigationIcons.SingleOrDefaultAsync(x => x.Id == iconId, cancellationToken);
+        if (icon is null)
+        {
+            return Result<NavigationIconResponse>.Failure(new Error("NAVIGATION_ICON_NOT_FOUND", "Navigation icon was not found."));
+        }
+
+        icon.Symbol = request.Symbol.Trim();
+        icon.Description = request.Description?.Trim();
+        icon.IsActive = request.IsActive;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationIconResponse>.Success(new NavigationIconResponse(icon.Id, icon.Key, icon.Symbol, icon.Description, icon.IsActive));
+    }
+
+    public async Task<Result> DeleteNavigationIconAsync(Guid iconId, CancellationToken cancellationToken)
+    {
+        var icon = await dbContext.NavigationIcons.SingleOrDefaultAsync(x => x.Id == iconId, cancellationToken);
+        if (icon is null)
+        {
+            return Result.Failure(new Error("NAVIGATION_ICON_NOT_FOUND", "Navigation icon was not found."));
+        }
+
+        dbContext.NavigationIcons.Remove(icon);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result.Success();
     }
 
     private IQueryable<Appointment> AppointmentQuery()
@@ -364,31 +623,40 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         }
     }
 
-    private NavigationMenuGroupResponse MapGroup(
-        NavigationGroupPayload group,
+    private NavigationMenuGroupResponse MapGroupFromEntity(
+        NavigationGroup group,
         string culture,
         IReadOnlySet<string>? assignedKeys)
     {
-        var label = SelectLocalizedValue(group.Labels, culture) ?? group.Key;
-        var items = (group.Items ?? [])
-            .Where(x => IsItemAuthorized(x, assignedKeys))
-            .OrderBy(x => x.SortOrder)
-            .Select(x => new NavigationMenuItemResponse(
-                x.Key,
-                SelectLocalizedValue(x.Label, culture) ?? x.Key,
-                string.IsNullOrWhiteSpace(x.Icon) ? "?" : x.Icon.Trim(),
-                x.Route?.Trim() ?? string.Empty,
-                x.SortOrder))
-            .ToList();
-
+        var items = BuildMenuTree(group.Items, null, culture, assignedKeys);
         return new NavigationMenuGroupResponse(
             group.Key,
-            label,
+            SelectLocalizedValue(group.LabelEn, group.LabelUr, culture),
             group.SortOrder,
             items);
     }
 
-    private bool IsItemAuthorized(NavigationItemPayload item, IReadOnlySet<string>? assignedKeys)
+    private List<NavigationMenuItemResponse> BuildMenuTree(
+        IEnumerable<NavigationItem> allItems,
+        Guid? parentId,
+        string culture,
+        IReadOnlySet<string>? assignedKeys)
+    {
+        return allItems
+            .Where(x => x.ParentItemId == parentId && x.IsActive)
+            .Where(x => IsItemAuthorized(x, assignedKeys))
+            .OrderBy(x => x.SortOrder)
+            .Select(x => new NavigationMenuItemResponse(
+                x.Key,
+                SelectLocalizedValue(x.LabelEn, x.LabelUr, culture),
+                string.IsNullOrWhiteSpace(x.Icon) ? "?" : x.Icon.Trim(),
+                x.Route?.Trim() ?? string.Empty,
+                x.SortOrder,
+                BuildMenuTree(allItems, x.Id, culture, assignedKeys)))
+            .ToList();
+    }
+
+    private bool IsItemAuthorized(NavigationItem item, IReadOnlySet<string>? assignedKeys)
     {
         if (currentUser?.IsSuperAdmin == true)
         {
@@ -400,39 +668,14 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
             return false;
         }
 
-        if (item.RequiredPermissions is null || item.RequiredPermissions.Count == 0)
+        var requiredPermissions = ReadRequiredPermissions(item.RequiredPermissionsJson);
+        if (requiredPermissions.Count == 0)
         {
             return true;
         }
 
-        return item.RequiredPermissions.Any(permission =>
+        return requiredPermissions.Any(permission =>
             currentUser?.Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase) == true);
-    }
-
-    private async Task<Result<NavigationConfigPayload>> GetNavigationConfigPayloadAsync(CancellationToken cancellationToken)
-    {
-        var setting = await dbContext.SystemSettings
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
-        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
-        {
-            return Result<NavigationConfigPayload>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
-        }
-
-        try
-        {
-            var payload = JsonSerializer.Deserialize<NavigationConfigPayload>(setting.Value, JsonOptions);
-            if (payload?.Groups is null || payload.Groups.Count == 0)
-            {
-                return Result<NavigationConfigPayload>.Failure(new Error("NAVIGATION_CONFIG_EMPTY", "Navigation configuration does not contain any groups."));
-            }
-
-            return Result<NavigationConfigPayload>.Success(payload);
-        }
-        catch (JsonException)
-        {
-            return Result<NavigationConfigPayload>.Failure(new Error("NAVIGATION_CONFIG_INVALID", "Navigation configuration JSON is invalid."));
-        }
     }
 
     private async Task<IReadOnlySet<string>?> GetAssignedMenuKeysAsync(Guid userId, CancellationToken cancellationToken)
@@ -460,20 +703,131 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         }
     }
 
-    private static string? SelectLocalizedValue(LocalizedTextPayload? localized, string culture)
+    private static string SelectLocalizedValue(string en, string ur, string culture)
     {
-        if (localized is null)
-        {
-            return null;
-        }
-
         if (string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(localized.Ur))
+            && !string.IsNullOrWhiteSpace(ur))
         {
-            return localized.Ur.Trim();
+            return ur.Trim();
         }
 
-        return string.IsNullOrWhiteSpace(localized.En) ? null : localized.En.Trim();
+        return string.IsNullOrWhiteSpace(en) ? ur.Trim() : en.Trim();
+    }
+
+    private static IReadOnlyList<string> ReadRequiredPermissions(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            var permissions = JsonSerializer.Deserialize<string[]>(json, JsonOptions) ?? [];
+            return permissions
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static NavigationConfigPayload ToNavigationConfigPayload(IReadOnlyList<NavigationGroup> groups)
+    {
+        return new NavigationConfigPayload(
+            groups
+                .OrderBy(x => x.SortOrder)
+                .Select(group =>
+                    new NavigationGroupPayload(
+                        group.Key,
+                        group.SortOrder,
+                        new LocalizedTextPayload(group.LabelEn, group.LabelUr),
+                        BuildGroupItemsForPayload(group.Items, null)))
+                .ToArray());
+    }
+
+    private static IReadOnlyList<NavigationItemPayload> BuildGroupItemsForPayload(ICollection<NavigationItem> items, Guid? parentItemId)
+    {
+        return items
+            .Where(x => x.ParentItemId == parentItemId)
+            .OrderBy(x => x.SortOrder)
+            .Select(item => new NavigationItemPayload(
+                item.Key,
+                new LocalizedTextPayload(item.LabelEn, item.LabelUr),
+                item.Icon,
+                item.Route,
+                item.SortOrder,
+                ReadRequiredPermissions(item.RequiredPermissionsJson),
+                BuildGroupItemsForPayload(items, item.Id)))
+            .ToArray();
+    }
+
+    private static void CollectItemsForImport(
+        NavigationGroup group,
+        NavigationItemPayload payload,
+        string? parentKey,
+        ICollection<(NavigationItem Item, string? ParentKey)> items)
+    {
+        var entity = new NavigationItem
+        {
+            NavigationGroupId = group.Id,
+            Key = payload.Key,
+            LabelEn = payload.Label.En ?? payload.Key,
+            LabelUr = payload.Label.Ur ?? (payload.Label.En ?? payload.Key),
+            Icon = string.IsNullOrWhiteSpace(payload.Icon) ? "?" : payload.Icon.Trim(),
+            Route = payload.Route?.Trim() ?? string.Empty,
+            SortOrder = payload.SortOrder,
+            RequiredPermissionsJson = JsonSerializer.Serialize((payload.RequiredPermissions ?? []).ToArray(), JsonOptions),
+            IsActive = true
+        };
+
+        items.Add((entity, parentKey));
+        foreach (var child in payload.Children ?? [])
+        {
+            CollectItemsForImport(group, child, payload.Key, items);
+        }
+    }
+
+    private static IReadOnlyList<NavigationItemResponse> BuildNavigationItemTree(IReadOnlyList<NavigationItem> items, Guid? parentId)
+    {
+        return items
+            .Where(x => x.ParentItemId == parentId)
+            .OrderBy(x => x.SortOrder)
+            .Select(x => ToNavigationItemResponse(x, BuildNavigationItemTree(items, x.Id)))
+            .ToArray();
+    }
+
+    private static NavigationItemResponse ToNavigationItemResponse(NavigationItem item, IReadOnlyList<NavigationItemResponse> children)
+    {
+        return new NavigationItemResponse(
+            item.Id,
+            item.NavigationGroupId,
+            item.ParentItemId,
+            item.Key,
+            item.LabelEn,
+            item.LabelUr,
+            item.Icon,
+            item.Route,
+            item.SortOrder,
+            ReadRequiredPermissions(item.RequiredPermissionsJson),
+            item.IsActive,
+            children);
+    }
+
+    private static HashSet<Guid> GetDescendantIds(IReadOnlyList<NavigationItem> items, Guid parentId)
+    {
+        var children = items.Where(x => x.ParentItemId == parentId).Select(x => x.Id).ToList();
+        var result = new HashSet<Guid>(children);
+        foreach (var child in children)
+        {
+            result.UnionWith(GetDescendantIds(items, child));
+        }
+
+        return result;
     }
 
     private static int Count(IEnumerable<AppointmentStatusCount> counts, AppointmentStatus status)
@@ -595,7 +949,8 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurre
         string Icon,
         string Route,
         int SortOrder,
-        IReadOnlyList<string>? RequiredPermissions);
+        IReadOnlyList<string>? RequiredPermissions,
+        IReadOnlyList<NavigationItemPayload>? Children);
 
     private sealed record LocalizedTextPayload(string? En, string? Ur);
 

@@ -1,4 +1,5 @@
 using HealthCareMS.Application.Admin;
+using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
@@ -79,6 +80,73 @@ public sealed class AdminOperationsServiceTests
         Assert.Equal("true", updated.Value.Value);
         Assert.True(invalid.IsFailure);
         Assert.Equal("ADMIN_SETTING_VALUE_INVALID", invalid.Error.Code);
+    }
+
+    [Fact]
+    public async Task NavigationCrud_ShouldCreateRecursiveTreeAndLocalizedMenu()
+    {
+        await using var dbContext = CreateDbContext();
+        var setup = await SeedAdminSetupAsync(dbContext);
+        var superUser = new FakeCurrentUser(
+            setup.DoctorUserId,
+            tenantId: null,
+            isAuthenticated: true,
+            isSuperAdmin: true,
+            permissions: PermissionKeys.All.ToArray());
+        var service = new AdminOperationsService(dbContext, superUser);
+
+        var groupResult = await service.CreateNavigationGroupAsync(
+            new CreateNavigationGroupRequest("operations-seed", "Operations", "آپریشنز", 10),
+            CancellationToken.None);
+        Assert.True(groupResult.IsSuccess);
+
+        var parentResult = await service.CreateNavigationItemAsync(
+            new CreateNavigationItemRequest(
+                groupResult.Value.Id,
+                ParentItemId: null,
+                Key: "parent-menu",
+                LabelEn: "Parent Menu",
+                LabelUr: "پیرنٹ مینو",
+                Icon: "P",
+                Route: "parent",
+                SortOrder: 10,
+                RequiredPermissions: [PermissionKeys.Doctor.ScheduleManage]),
+            CancellationToken.None);
+        Assert.True(parentResult.IsSuccess);
+
+        var childResult = await service.CreateNavigationItemAsync(
+            new CreateNavigationItemRequest(
+                groupResult.Value.Id,
+                ParentItemId: parentResult.Value.Id,
+                Key: "child-menu",
+                LabelEn: "Child Menu",
+                LabelUr: "چائلڈ مینو",
+                Icon: "C",
+                Route: "parent/child",
+                SortOrder: 20,
+                RequiredPermissions: [PermissionKeys.Patient.RecordsViewOwn]),
+            CancellationToken.None);
+        Assert.True(childResult.IsSuccess);
+
+        var iconResult = await service.CreateNavigationIconAsync(
+            new CreateNavigationIconRequest("parent-menu", "P", "Parent icon"),
+            CancellationToken.None);
+        Assert.True(iconResult.IsSuccess);
+
+        var itemTree = await service.GetNavigationItemsTreeAsync(CancellationToken.None);
+        var parent = Assert.Single(itemTree);
+        Assert.Equal("parent-menu", parent.Key);
+        var child = Assert.Single(parent.Children);
+        Assert.Equal("child-menu", child.Key);
+
+        var menu = await service.GetNavigationMenuAsync("ur", CancellationToken.None);
+        Assert.True(menu.IsSuccess);
+        var menuGroup = Assert.Single(menu.Value.Groups);
+        Assert.Equal("آپریشنز", menuGroup.Label);
+        var menuParent = Assert.Single(menuGroup.Items);
+        Assert.Equal("پیرنٹ مینو", menuParent.Label);
+        var menuChild = Assert.Single(menuParent.Children);
+        Assert.Equal("چائلڈ مینو", menuChild.Label);
     }
 
     private static HealthCareDbContext CreateDbContext()
@@ -166,7 +234,7 @@ public sealed class AdminOperationsServiceTests
         dbContext.Appointments.AddRange(pending, completed, cancelled);
         await dbContext.SaveChangesAsync();
 
-        return new AdminSetup(today, doctor.Id);
+        return new AdminSetup(today, doctor.Id, doctorUser.Id);
     }
 
     private static Appointment CreateAppointment(
@@ -196,5 +264,19 @@ public sealed class AdminOperationsServiceTests
         };
     }
 
-    private sealed record AdminSetup(DateOnly Today, Guid DoctorId);
+    private sealed record AdminSetup(DateOnly Today, Guid DoctorId, Guid DoctorUserId);
+
+    private sealed class FakeCurrentUser(
+        Guid? userId,
+        Guid? tenantId,
+        bool isAuthenticated,
+        bool isSuperAdmin,
+        IReadOnlyCollection<string> permissions) : ICurrentUser
+    {
+        public Guid? UserId { get; } = userId;
+        public Guid? TenantId { get; } = tenantId;
+        public bool IsAuthenticated { get; } = isAuthenticated;
+        public bool IsSuperAdmin { get; } = isSuperAdmin;
+        public IReadOnlyCollection<string> Permissions { get; } = permissions;
+    }
 }

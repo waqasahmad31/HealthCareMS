@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace HealthCareMS.Infrastructure.Seed;
 
@@ -30,6 +31,7 @@ public sealed class DatabaseSeeder(
         await SeedRolesAsync(cancellationToken);
         await SeedSuperAdminAsync(cancellationToken);
         await SeedSystemSettingsAsync(cancellationToken);
+        await SeedNavigationEntitiesAsync(cancellationToken);
         if (seedDemoData)
         {
             await SeedAllDomainTablesAsync(cancellationToken);
@@ -225,6 +227,176 @@ public sealed class DatabaseSeeder(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task SeedNavigationEntitiesAsync(CancellationToken cancellationToken)
+    {
+        if (await dbContext.NavigationGroups.AnyAsync(cancellationToken))
+        {
+            return;
+        }
+
+        var settingsJson = await dbContext.SystemSettings
+            .Where(x => x.SettingKey == NavigationSettingKey)
+            .Select(x => x.Value)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var json = string.IsNullOrWhiteSpace(settingsJson) ? NavigationDefaults.ConfigurationJson : settingsJson;
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            document = JsonDocument.Parse(NavigationDefaults.ConfigurationJson);
+        }
+
+        using (document)
+        {
+            if (!document.RootElement.TryGetProperty("groups", out var groupsElement) || groupsElement.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            var groupByKey = new Dictionary<string, NavigationGroup>(StringComparer.OrdinalIgnoreCase);
+            var itemsToAdd = new List<(NavigationItem Item, string? ParentKey)>();
+            foreach (var groupElement in groupsElement.EnumerateArray())
+            {
+                var groupKey = groupElement.GetProperty("key").GetString()?.Trim() ?? Guid.NewGuid().ToString("N");
+                var sortOrder = groupElement.TryGetProperty("sortOrder", out var groupSortElement) && groupSortElement.TryGetInt32(out var gs) ? gs : 0;
+
+                var labelEn = groupKey;
+                var labelUr = groupKey;
+                if (groupElement.TryGetProperty("labels", out var labelsElement) && labelsElement.ValueKind == JsonValueKind.Object)
+                {
+                    labelEn = labelsElement.TryGetProperty("en", out var enElement) ? enElement.GetString() ?? groupKey : groupKey;
+                    labelUr = labelsElement.TryGetProperty("ur", out var urElement) ? urElement.GetString() ?? labelEn : labelEn;
+                }
+
+                var group = new NavigationGroup
+                {
+                    Key = groupKey,
+                    LabelEn = labelEn,
+                    LabelUr = labelUr,
+                    SortOrder = sortOrder,
+                    IsActive = true
+                };
+                dbContext.NavigationGroups.Add(group);
+                groupByKey[groupKey] = group;
+
+                if (!groupElement.TryGetProperty("items", out var itemsElement) || itemsElement.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                foreach (var itemElement in itemsElement.EnumerateArray())
+                {
+                    ParseNavigationItemRecursive(group, itemElement, null, itemsToAdd);
+                }
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            var itemKeyLookup = new Dictionary<string, NavigationItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (var itemEntry in itemsToAdd)
+            {
+                dbContext.NavigationItems.Add(itemEntry.Item);
+                itemKeyLookup[itemEntry.Item.Key] = itemEntry.Item;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            foreach (var itemEntry in itemsToAdd.Where(x => !string.IsNullOrWhiteSpace(x.ParentKey)))
+            {
+                if (!itemKeyLookup.TryGetValue(itemEntry.ParentKey!, out var parent))
+                {
+                    continue;
+                }
+
+                itemEntry.Item.ParentItemId = parent.Id;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        if (!await dbContext.NavigationIcons.AnyAsync(cancellationToken))
+        {
+            dbContext.NavigationIcons.AddRange(
+                new NavigationIcon { Key = "dashboard", Symbol = "D", Description = "Dashboard" },
+                new NavigationIcon { Key = "notifications", Symbol = "N", Description = "Notifications" },
+                new NavigationIcon { Key = "tenants", Symbol = "T", Description = "Tenants" },
+                new NavigationIcon { Key = "doctors", Symbol = "V", Description = "Doctors" },
+                new NavigationIcon { Key = "config", Symbol = "K", Description = "Configuration" },
+                new NavigationIcon { Key = "doctor-portal", Symbol = "P", Description = "Doctor Portal" },
+                new NavigationIcon { Key = "patient-portal", Symbol = "U", Description = "Patient Portal" },
+                new NavigationIcon { Key = "pharmacy", Symbol = "R", Description = "Pharmacy" },
+                new NavigationIcon { Key = "lab", Symbol = "L", Description = "Laboratory" });
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static void ParseNavigationItemRecursive(
+        NavigationGroup group,
+        JsonElement itemElement,
+        string? parentKey,
+        ICollection<(NavigationItem Item, string? ParentKey)> output)
+    {
+        if (!itemElement.TryGetProperty("key", out var keyElement) || keyElement.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        var key = keyElement.GetString()?.Trim();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        var labelEn = key;
+        var labelUr = key;
+        if (itemElement.TryGetProperty("label", out var labelElement) && labelElement.ValueKind == JsonValueKind.Object)
+        {
+            labelEn = labelElement.TryGetProperty("en", out var enElement) ? enElement.GetString() ?? key : key;
+            labelUr = labelElement.TryGetProperty("ur", out var urElement) ? urElement.GetString() ?? labelEn : labelEn;
+        }
+
+        var icon = itemElement.TryGetProperty("icon", out var iconElement) ? (iconElement.GetString() ?? "?") : "?";
+        var route = itemElement.TryGetProperty("route", out var routeElement) ? (routeElement.GetString() ?? string.Empty) : string.Empty;
+        var sortOrder = itemElement.TryGetProperty("sortOrder", out var sortElement) && sortElement.TryGetInt32(out var so) ? so : 0;
+
+        var requiredPermissions = "[]";
+        if (itemElement.TryGetProperty("requiredPermissions", out var permissionsElement))
+        {
+            requiredPermissions = permissionsElement.GetRawText();
+        }
+
+        var item = new NavigationItem
+        {
+            NavigationGroupId = group.Id,
+            Key = key,
+            LabelEn = labelEn,
+            LabelUr = labelUr,
+            Icon = icon,
+            Route = route,
+            SortOrder = sortOrder,
+            RequiredPermissionsJson = requiredPermissions,
+            ParentItemId = null,
+            IsActive = true
+        };
+
+        output.Add((item, parentKey));
+
+        if (!itemElement.TryGetProperty("children", out var childrenElement) || childrenElement.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var childElement in childrenElement.EnumerateArray())
+        {
+            ParseNavigationItemRecursive(group, childElement, key, output);
+        }
     }
 
     private async Task SeedAllDomainTablesAsync(CancellationToken cancellationToken)

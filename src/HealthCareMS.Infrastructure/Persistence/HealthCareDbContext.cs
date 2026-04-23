@@ -37,6 +37,12 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
+    public DbSet<NavigationGroup> NavigationGroups => Set<NavigationGroup>();
+
+    public DbSet<NavigationItem> NavigationItems => Set<NavigationItem>();
+
+    public DbSet<NavigationIcon> NavigationIcons => Set<NavigationIcon>();
+
     public DbSet<Patient> Patients => Set<Patient>();
 
     public DbSet<MedicalHistory> MedicalHistories => Set<MedicalHistory>();

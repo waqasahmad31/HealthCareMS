@@ -158,6 +158,130 @@
 
         <section class="panel system-config-panel">
             <div class="panel-header">
+                <h2>Navigation CRUD Workspace</h2>
+                <button class="secondary-button small-button" type="button" @onclick="LoadNavigationCrudAsync" disabled="@IsBusy">Reload CRUD Data</button>
+            </div>
+            <div class="entity-form">
+                <label>
+                    Group Key
+                    <InputText @bind-Value="CreateGroup.Key" />
+                </label>
+                <label>
+                    Group Label EN
+                    <InputText @bind-Value="CreateGroup.LabelEn" />
+                </label>
+                <label>
+                    Group Label UR
+                    <InputText @bind-Value="CreateGroup.LabelUr" />
+                </label>
+                <label>
+                    Group Sort
+                    <InputNumber @bind-Value="CreateGroup.SortOrder" />
+                </label>
+                <button class="primary-button small-button" type="button" @onclick="CreateNavigationGroupAsync" disabled="@IsBusy">Create Group</button>
+            </div>
+            <div class="table-shell">
+                @foreach (var group in NavigationCrudGroups.OrderBy(x => x.SortOrder))
+                {
+                    <div class="table-row">
+                        <span>@group.Key</span>
+                        <span>@group.LabelEn / @group.LabelUr</span>
+                        <span>@group.SortOrder</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationGroupAsync(group.Id)" disabled="@IsBusy">Delete</button>
+                    </div>
+                }
+            </div>
+
+            <div class="entity-form">
+                <label>
+                    Item Group
+                    <select @bind="CreateItem.NavigationGroupId">
+                        <option value="">Select group</option>
+                        @foreach (var group in NavigationCrudGroups.OrderBy(x => x.SortOrder))
+                        {
+                            <option value="@group.Id">@group.Key</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Parent Item
+                    <select @bind="CreateItem.ParentItemId">
+                        <option value="">Root</option>
+                        @foreach (var item in FlatNavigationItems.OrderBy(x => x.SortOrder))
+                        {
+                            <option value="@item.Id">@item.Key</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Item Key
+                    <InputText @bind-Value="CreateItem.Key" />
+                </label>
+                <label>
+                    Item Label EN
+                    <InputText @bind-Value="CreateItem.LabelEn" />
+                </label>
+                <label>
+                    Item Label UR
+                    <InputText @bind-Value="CreateItem.LabelUr" />
+                </label>
+                <label>
+                    Icon
+                    <InputText @bind-Value="CreateItem.Icon" />
+                </label>
+                <label>
+                    Route
+                    <InputText @bind-Value="CreateItem.Route" />
+                </label>
+                <label>
+                    Sort
+                    <InputNumber @bind-Value="CreateItem.SortOrder" />
+                </label>
+                <button class="primary-button small-button" type="button" @onclick="CreateNavigationItemAsync" disabled="@IsBusy">Create Item/Submenu</button>
+            </div>
+            <div class="table-shell">
+                @foreach (var item in FlatNavigationItems.OrderBy(x => x.SortOrder))
+                {
+                    <div class="table-row">
+                        <span>@item.Key</span>
+                        <span>@item.LabelEn / @item.LabelUr</span>
+                        <span>@item.Icon</span>
+                        <span>@item.Route</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationItemAsync(item.Id)" disabled="@IsBusy">Delete</button>
+                    </div>
+                }
+            </div>
+
+            <div class="entity-form">
+                <label>
+                    Icon Key
+                    <InputText @bind-Value="CreateIcon.Key" />
+                </label>
+                <label>
+                    Symbol
+                    <InputText @bind-Value="CreateIcon.Symbol" />
+                </label>
+                <label>
+                    Description
+                    <InputText @bind-Value="CreateIcon.Description" />
+                </label>
+                <button class="primary-button small-button" type="button" @onclick="CreateNavigationIconAsync" disabled="@IsBusy">Create Icon</button>
+            </div>
+            <div class="table-shell">
+                @foreach (var icon in NavigationCrudIcons.OrderBy(x => x.Key))
+                {
+                    <div class="table-row">
+                        <span>@icon.Key</span>
+                        <span>@icon.Symbol</span>
+                        <span>@icon.Description</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => DeleteNavigationIconAsync(icon.Id)" disabled="@IsBusy">Delete</button>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel system-config-panel">
+            <div class="panel-header">
                 <h2>Live Preview</h2>
                 <span class="status-pill blue">@SelectedMenuKeys.Count selected</span>
             </div>
@@ -256,6 +380,20 @@
 
     private List<UndoToastModel> Toasts { get; } = [];
 
+    private List<NavigationGroupModel> NavigationCrudGroups { get; set; } = [];
+
+    private List<NavigationItemModel> NavigationCrudItems { get; set; } = [];
+
+    private List<NavigationIconModel> NavigationCrudIcons { get; set; } = [];
+
+    private CreateNavigationGroupModel CreateGroup { get; set; } = new();
+
+    private CreateNavigationItemModel CreateItem { get; set; } = new();
+
+    private CreateNavigationIconModel CreateIcon { get; set; } = new();
+
+    private IEnumerable<NavigationItemModel> FlatNavigationItems => FlattenItems(NavigationCrudItems);
+
     private IEnumerable<MenuGroupOption> FilteredNavigationGroups =>
         string.IsNullOrWhiteSpace(MenuSearchQuery)
             ? NavigationGroups
@@ -283,6 +421,7 @@
     {
         await LoadAsync();
         await LoadNavigationConfigurationAsync();
+        await LoadNavigationCrudAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -348,6 +487,7 @@
             NavigationConfigurationJson = result.Data.ConfigurationJson;
             LastSavedNavigationConfigurationJson = result.Data.ConfigurationJson;
             RebuildNavigationOptions();
+            await LoadNavigationCrudAsync();
             SetStatus("Navigation configuration loaded.", "tone-green");
             return;
         }
@@ -373,6 +513,7 @@
         {
             RebuildNavigationOptions();
             LastSavedNavigationConfigurationJson = NavigationConfigurationJson;
+            await LoadNavigationCrudAsync();
             SetStatus("Navigation configuration saved.", "tone-green");
             return;
         }
@@ -760,6 +901,109 @@
         toast.IsExpired = true;
         Toasts.RemoveAll(x => x.Id == id);
         return Task.CompletedTask;
+    }
+
+    private async Task LoadNavigationCrudAsync()
+    {
+        var groupsResult = await ApiClient.GetAsync<IReadOnlyList<NavigationGroupModel>>("api/v1/admin/navigation/groups");
+        var itemsResult = await ApiClient.GetAsync<IReadOnlyList<NavigationItemModel>>("api/v1/admin/navigation/items");
+        var iconsResult = await ApiClient.GetAsync<IReadOnlyList<NavigationIconModel>>("api/v1/admin/navigation/icons");
+
+        if (groupsResult?.Success == true && groupsResult.Data is not null)
+        {
+            NavigationCrudGroups = groupsResult.Data.ToList();
+        }
+
+        if (itemsResult?.Success == true && itemsResult.Data is not null)
+        {
+            NavigationCrudItems = itemsResult.Data.ToList();
+        }
+
+        if (iconsResult?.Success == true && iconsResult.Data is not null)
+        {
+            NavigationCrudIcons = iconsResult.Data.ToList();
+        }
+    }
+
+    private async Task CreateNavigationGroupAsync()
+    {
+        var result = await ApiClient.PostAsync<CreateNavigationGroupModel, NavigationGroupModel>("api/v1/admin/navigation/groups", CreateGroup);
+        if (result?.Success == true)
+        {
+            CreateGroup = new CreateNavigationGroupModel();
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation group created.", "tone-green");
+        }
+    }
+
+    private async Task DeleteNavigationGroupAsync(Guid groupId)
+    {
+        var result = await ApiClient.DeleteAsync<object>($"api/v1/admin/navigation/groups/{groupId}");
+        if (result?.Success == true)
+        {
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation group deleted.", "tone-green");
+        }
+    }
+
+    private async Task CreateNavigationItemAsync()
+    {
+        if (CreateItem.NavigationGroupId == Guid.Empty)
+        {
+            SetStatus("Select a group for navigation item.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.PostAsync<CreateNavigationItemModel, NavigationItemModel>("api/v1/admin/navigation/items", CreateItem);
+        if (result?.Success == true)
+        {
+            CreateItem = new CreateNavigationItemModel();
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation item created.", "tone-green");
+        }
+    }
+
+    private async Task DeleteNavigationItemAsync(Guid itemId)
+    {
+        var result = await ApiClient.DeleteAsync<object>($"api/v1/admin/navigation/items/{itemId}");
+        if (result?.Success == true)
+        {
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation item deleted.", "tone-green");
+        }
+    }
+
+    private async Task CreateNavigationIconAsync()
+    {
+        var result = await ApiClient.PostAsync<CreateNavigationIconModel, NavigationIconModel>("api/v1/admin/navigation/icons", CreateIcon);
+        if (result?.Success == true)
+        {
+            CreateIcon = new CreateNavigationIconModel();
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation icon created.", "tone-green");
+        }
+    }
+
+    private async Task DeleteNavigationIconAsync(Guid iconId)
+    {
+        var result = await ApiClient.DeleteAsync<object>($"api/v1/admin/navigation/icons/{iconId}");
+        if (result?.Success == true)
+        {
+            await LoadNavigationCrudAsync();
+            SetStatus("Navigation icon deleted.", "tone-green");
+        }
+    }
+
+    private static IEnumerable<NavigationItemModel> FlattenItems(IEnumerable<NavigationItemModel> items)
+    {
+        foreach (var item in items)
+        {
+            yield return item;
+            foreach (var child in FlattenItems(item.Children))
+            {
+                yield return child;
+            }
+        }
     }
 
     private sealed record MenuGroupOption(string Key, string Label, IReadOnlyList<MenuItemOption> Items);

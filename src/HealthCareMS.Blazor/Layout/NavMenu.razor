@@ -1,5 +1,6 @@
 @using HealthCareMS.Blazor.Services
 @inject HealthCareApiClient ApiClient
+@inject AppCultureService CultureService
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -32,11 +33,7 @@
             <div class="nav-section">@group.Label</div>
             @foreach (var item in group.Items.OrderBy(x => x.SortOrder))
             {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="@item.Route" Match="@(string.IsNullOrEmpty(item.Route) ? NavLinkMatch.All : NavLinkMatch.Prefix)">
-                        <span class="nav-symbol" aria-hidden="true">@item.Icon</span> @item.Label
-                    </NavLink>
-                </div>
+                @RenderMenuItem(item, 0)
             }
         }
     </nav>
@@ -52,6 +49,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        culture = CultureService.CurrentCulture;
         await LoadMenuAsync();
     }
 
@@ -62,7 +60,8 @@
 
     private async Task SetCultureAsync(string value)
     {
-        culture = value;
+        culture = string.Equals(value, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en";
+        await CultureService.SetCultureAsync(culture);
         await LoadMenuAsync();
     }
 
@@ -79,4 +78,34 @@
 
         MenuGroups = response.Data.Groups.OrderBy(x => x.SortOrder).ToList();
     }
+
+    private RenderFragment RenderMenuItem(NavigationMenuItemModel item, int depth) => builder =>
+    {
+        var sequence = 0;
+        builder.OpenElement(sequence++, "div");
+        builder.AddAttribute(sequence++, "class", "nav-item px-3");
+        builder.AddAttribute(sequence++, "style", depth == 0 ? string.Empty : $"padding-left:{0.75m + depth * 0.85m}rem;");
+
+        builder.OpenComponent<NavLink>(sequence++);
+        builder.AddAttribute(sequence++, "class", "nav-link");
+        builder.AddAttribute(sequence++, "href", item.Route);
+        builder.AddAttribute(sequence++, "Match", string.IsNullOrEmpty(item.Route) ? NavLinkMatch.All : NavLinkMatch.Prefix);
+        builder.AddAttribute(sequence++, "ChildContent", (RenderFragment)(contentBuilder =>
+        {
+            var innerSeq = 0;
+            contentBuilder.OpenElement(innerSeq++, "span");
+            contentBuilder.AddAttribute(innerSeq++, "class", "nav-symbol");
+            contentBuilder.AddAttribute(innerSeq++, "aria-hidden", "true");
+            contentBuilder.AddContent(innerSeq++, item.Icon);
+            contentBuilder.CloseElement();
+            contentBuilder.AddContent(innerSeq++, $" {item.Label}");
+        }));
+        builder.CloseComponent();
+        builder.CloseElement();
+
+        foreach (var child in item.Children.OrderBy(x => x.SortOrder))
+        {
+            builder.AddContent(sequence++, RenderMenuItem(child, depth + 1));
+        }
+    };
 }

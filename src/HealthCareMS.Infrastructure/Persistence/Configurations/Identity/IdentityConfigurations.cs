@@ -175,3 +175,79 @@ public sealed class SystemSettingConfiguration : IEntityTypeConfiguration<System
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }
+
+public sealed class NavigationGroupConfiguration : IEntityTypeConfiguration<NavigationGroup>
+{
+    public void Configure(EntityTypeBuilder<NavigationGroup> builder)
+    {
+        builder.ToTable("NavigationGroups", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Key).HasMaxLength(120).IsRequired();
+        builder.Property(x => x.LabelEn).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.LabelUr).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.SortOrder).HasDefaultValue(0);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => new { x.TenantId, x.Key }).IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.SortOrder });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Tenant)
+            .WithMany()
+            .HasForeignKey(x => x.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class NavigationItemConfiguration : IEntityTypeConfiguration<NavigationItem>
+{
+    public void Configure(EntityTypeBuilder<NavigationItem> builder)
+    {
+        builder.ToTable("NavigationItems", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Key).HasMaxLength(120).IsRequired();
+        builder.Property(x => x.LabelEn).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.LabelUr).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Icon).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Route).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.RequiredPermissionsJson).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb").IsRequired();
+        builder.Property(x => x.SortOrder).HasDefaultValue(0);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => new { x.NavigationGroupId, x.Key }).IsUnique();
+        builder.HasIndex(x => new { x.NavigationGroupId, x.ParentItemId, x.SortOrder });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.NavigationGroup)
+            .WithMany(x => x.Items)
+            .HasForeignKey(x => x.NavigationGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.ParentItem)
+            .WithMany(x => x.Children)
+            .HasForeignKey(x => x.ParentItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class NavigationIconConfiguration : IEntityTypeConfiguration<NavigationIcon>
+{
+    public void Configure(EntityTypeBuilder<NavigationIcon> builder)
+    {
+        builder.ToTable("NavigationIcons", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Key).HasMaxLength(120).IsRequired();
+        builder.Property(x => x.Symbol).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(250);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => x.Key).IsUnique();
+        builder.HasQueryFilter(x => !x.IsDeleted);
+    }
+}

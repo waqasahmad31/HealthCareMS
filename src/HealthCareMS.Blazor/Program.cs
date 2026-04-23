@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using HealthCareMS.Blazor;
 using HealthCareMS.Blazor.Services;
+using System.Globalization;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -18,5 +20,9 @@ var apiEndpoints = new ApiEndpointOptions(apiBaseAddress);
 builder.Services.AddSingleton(apiEndpoints);
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiEndpoints.BaseUri });
 builder.Services.AddScoped<HealthCareApiClient>();
+builder.Services.AddScoped<AppCultureService>();
+
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
 await builder.Build().RunAsync();

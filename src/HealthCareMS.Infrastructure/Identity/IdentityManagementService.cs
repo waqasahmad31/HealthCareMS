@@ -437,39 +437,24 @@ public sealed class IdentityManagementService(
 
     private async Task<Result<IReadOnlySet<string>>> GetAssignableMenuKeysForCurrentUserAsync(CancellationToken cancellationToken)
     {
-        var setting = await dbContext.SystemSettings
+        var items = await dbContext.NavigationItems
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
-        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+            .Where(x => x.IsActive)
+            .ToListAsync(cancellationToken);
+        if (items.Count == 0)
         {
             return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
-        }
-
-        NavigationConfigPayload? payload;
-        try
-        {
-            payload = JsonSerializer.Deserialize<NavigationConfigPayload>(setting.Value, JsonOptions);
-        }
-        catch (JsonException)
-        {
-            return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_INVALID", "Navigation configuration JSON is invalid."));
-        }
-
-        if (payload?.Groups is null)
-        {
-            return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_EMPTY", "Navigation configuration does not contain any groups."));
         }
 
         var currentAssignment = await ReadUserAssignmentAsync(currentUser.UserId ?? Guid.Empty, cancellationToken);
         var allowedByAssignment = currentAssignment.MenuItemKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var permissionSet = currentUser.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var keys = payload.Groups
-            .SelectMany(x => x.Items ?? [])
+        var keys = items
             .Where(x =>
                 currentUser.IsSuperAdmin
-                || ((x.RequiredPermissions is null || x.RequiredPermissions.Count == 0)
-                    || x.RequiredPermissions.Any(permissionSet.Contains)))
+                || (ReadPermissions(x.RequiredPermissionsJson).Count == 0
+                    || ReadPermissions(x.RequiredPermissionsJson).Any(permissionSet.Contains)))
             .Where(x => currentUser.IsSuperAdmin || allowedByAssignment.Count == 0 || allowedByAssignment.Contains(x.Key))
             .Select(x => x.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -641,17 +626,27 @@ public sealed class IdentityManagementService(
 
     private sealed record UserNavigationAssignmentPayload(IReadOnlyList<string> MenuItemKeys);
 
-    private sealed record NavigationConfigPayload(IReadOnlyList<NavigationGroupPayload> Groups);
-
-    private sealed record NavigationGroupPayload(
-        string Key,
-        int SortOrder,
-        IReadOnlyList<NavigationItemPayload> Items);
-
-    private sealed record NavigationItemPayload(
-        string Key,
-        int SortOrder,
-        IReadOnlyList<string>? RequiredPermissions);
-
     private sealed record AssignmentReadModel(IReadOnlyList<string> MenuItemKeys, DateTimeOffset UpdatedAt);
+
+    private static IReadOnlyList<string> ReadPermissions(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            var values = JsonSerializer.Deserialize<string[]>(json, JsonOptions) ?? [];
+            return values
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 }

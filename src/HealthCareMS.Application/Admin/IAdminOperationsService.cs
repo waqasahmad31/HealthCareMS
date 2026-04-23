@@ -41,4 +41,28 @@ public interface IAdminOperationsService
     Task<Result<NavigationConfigurationResponse>> UpdateNavigationConfigurationAsync(
         UpdateNavigationConfigurationRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<NavigationGroupResponse>> GetNavigationGroupsAsync(CancellationToken cancellationToken);
+
+    Task<Result<NavigationGroupResponse>> CreateNavigationGroupAsync(CreateNavigationGroupRequest request, CancellationToken cancellationToken);
+
+    Task<Result<NavigationGroupResponse>> UpdateNavigationGroupAsync(Guid groupId, UpdateNavigationGroupRequest request, CancellationToken cancellationToken);
+
+    Task<Result> DeleteNavigationGroupAsync(Guid groupId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<NavigationItemResponse>> GetNavigationItemsTreeAsync(CancellationToken cancellationToken);
+
+    Task<Result<NavigationItemResponse>> CreateNavigationItemAsync(CreateNavigationItemRequest request, CancellationToken cancellationToken);
+
+    Task<Result<NavigationItemResponse>> UpdateNavigationItemAsync(Guid itemId, UpdateNavigationItemRequest request, CancellationToken cancellationToken);
+
+    Task<Result> DeleteNavigationItemAsync(Guid itemId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<NavigationIconResponse>> GetNavigationIconsAsync(CancellationToken cancellationToken);
+
+    Task<Result<NavigationIconResponse>> CreateNavigationIconAsync(CreateNavigationIconRequest request, CancellationToken cancellationToken);
+
+    Task<Result<NavigationIconResponse>> UpdateNavigationIconAsync(Guid iconId, UpdateNavigationIconRequest request, CancellationToken cancellationToken);
+
+    Task<Result> DeleteNavigationIconAsync(Guid iconId, CancellationToken cancellationToken);
 }
