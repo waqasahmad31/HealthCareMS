@@ -31,4 +31,14 @@ public interface IAdminOperationsService
         string settingKey,
         UpdateSystemSettingRequest request,
         CancellationToken cancellationToken);
+
+    Task<Result<NavigationMenuResponse>> GetNavigationMenuAsync(
+        string? culture,
+        CancellationToken cancellationToken);
+
+    Task<Result<NavigationConfigurationResponse>> GetNavigationConfigurationAsync(CancellationToken cancellationToken);
+
+    Task<Result<NavigationConfigurationResponse>> UpdateNavigationConfigurationAsync(
+        UpdateNavigationConfigurationRequest request,
+        CancellationToken cancellationToken);
 }

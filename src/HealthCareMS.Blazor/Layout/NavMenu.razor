@@ -1,142 +1,76 @@
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">HealthCareMS</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-light" @onclick='() => SetCultureAsync("en")'>EN</button>
+            <button class="btn btn-sm btn-outline-light" @onclick='() => SetCultureAsync("ur")'>UR</button>
+            <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
     </div>
 </div>
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="nav-symbol" aria-hidden="true">D</span> Dashboard
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="tenants">
-                <span class="nav-symbol" aria-hidden="true">T</span> Tenants
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="login">
-                <span class="nav-symbol" aria-hidden="true">A</span> Auth
-            </NavLink>
-        </div>
-        <div class="nav-section">Admin</div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="admin/appointments">
-                <span class="nav-symbol" aria-hidden="true">O</span> Appointments
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="admin/doctors">
-                <span class="nav-symbol" aria-hidden="true">V</span> Doctors
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="admin/system-configuration">
-                <span class="nav-symbol" aria-hidden="true">K</span> Configuration
-            </NavLink>
-        </div>
-        <div class="nav-section">Care</div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="patients">
-                <span class="nav-symbol" aria-hidden="true">P</span> Patients
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="doctors">
-                <span class="nav-symbol" aria-hidden="true">M</span> Doctors
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="appointments">
-                <span class="nav-symbol" aria-hidden="true">Q</span> Appointments
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="queue">
-                <span class="nav-symbol" aria-hidden="true">B</span> Queue
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="queue/doctor">
-                <span class="nav-symbol" aria-hidden="true">N</span> Doctor Queue
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="queue/patient">
-                <span class="nav-symbol" aria-hidden="true">S</span> Patient Queue
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="consultation/complete">
-                <span class="nav-symbol" aria-hidden="true">X</span> Consultation
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="consultation/waiting-room">
-                <span class="nav-symbol" aria-hidden="true">V</span> Waiting Room
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="vitals">
-                <span class="nav-symbol" aria-hidden="true">H</span> Vitals
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="notifications">
-                <span class="nav-symbol" aria-hidden="true">N</span> Notifications
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="notifications/preferences">
-                <span class="nav-symbol" aria-hidden="true">G</span> Preferences
-            </NavLink>
-        </div>
-        <div class="nav-section">Operations</div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="portal/doctor">
-                <span class="nav-symbol" aria-hidden="true">D</span> Doctor Portal
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="portal/patient">
-                <span class="nav-symbol" aria-hidden="true">U</span> Patient Portal
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="pharmacy">
-                <span class="nav-symbol" aria-hidden="true">R</span> Pharmacy
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="pharmacy/orders">
-                <span class="nav-symbol" aria-hidden="true">O</span> Pharmacy Orders
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="laboratory">
-                <span class="nav-symbol" aria-hidden="true">L</span> Laboratory
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="payments">
-                <span class="nav-symbol" aria-hidden="true">C</span> Payments
-            </NavLink>
-        </div>
+        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <div class="nav-item px-3 text-warning">@ErrorMessage</div>
+        }
+
+        @foreach (var group in MenuGroups)
+        {
+            <div class="nav-section">@group.Label</div>
+            @foreach (var item in group.Items.OrderBy(x => x.SortOrder))
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="@item.Route" Match="@(string.IsNullOrEmpty(item.Route) ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                        <span class="nav-symbol" aria-hidden="true">@item.Icon</span> @item.Label
+                    </NavLink>
+                </div>
+            }
+        }
     </nav>
 </div>
 
 @code {
     private bool collapseNavMenu = true;
+    private string culture = "en";
+    private string? ErrorMessage { get; set; }
+    private IReadOnlyList<NavigationMenuGroupModel> MenuGroups { get; set; } = [];
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMenuAsync();
+    }
 
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
+    }
+
+    private async Task SetCultureAsync(string value)
+    {
+        culture = value;
+        await LoadMenuAsync();
+    }
+
+    private async Task LoadMenuAsync()
+    {
+        ErrorMessage = null;
+        var response = await ApiClient.GetAsync<NavigationMenuModel>($"api/v1/system/navigation?culture={culture}");
+        if (response?.Success != true || response.Data is null)
+        {
+            ErrorMessage = "Navigation could not be loaded.";
+            MenuGroups = [];
+            return;
+        }
+
+        MenuGroups = response.Data.Groups.OrderBy(x => x.SortOrder).ToList();
     }
 }

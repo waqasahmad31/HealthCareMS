@@ -9,7 +9,8 @@ public sealed class HealthCareDbContextFactory : IDesignTimeDbContextFactory<Hea
     {
         var connectionString =
             Environment.GetEnvironmentVariable("HealthCareMS_ConnectionStrings__DefaultConnection")
-            ?? "Host=localhost;Port=5432;Database=HealthCareMS;Username=postgres;Password=123456789";
+            ?? throw new InvalidOperationException(
+                "Environment variable 'HealthCareMS_ConnectionStrings__DefaultConnection' is required for design-time DbContext creation.");
 
         var optionsBuilder = new DbContextOptionsBuilder<HealthCareDbContext>();
         optionsBuilder.UseNpgsql(connectionString);

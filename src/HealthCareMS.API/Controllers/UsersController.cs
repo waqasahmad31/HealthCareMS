@@ -15,4 +15,23 @@ public sealed class UsersController(IIdentityManagementService identityManagemen
         var result = await identityManagementService.CreateUserAsync(request, cancellationToken);
         return FromResult(result, StatusCodes.Status201Created);
     }
+
+    [HttpGet("{userId:guid}/menu-assignment")]
+    [RequirePermission(PermissionKeys.Tenant.UsersAssignRole)]
+    public async Task<IActionResult> GetMenuAssignment(Guid userId, CancellationToken cancellationToken)
+    {
+        var result = await identityManagementService.GetUserMenuAssignmentAsync(userId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("{userId:guid}/menu-assignment")]
+    [RequirePermission(PermissionKeys.Tenant.UsersAssignRole)]
+    public async Task<IActionResult> AssignMenu(
+        Guid userId,
+        AssignUserMenuRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await identityManagementService.AssignUserMenuAsync(userId, request, cancellationToken);
+        return FromResult(result);
+    }
 }

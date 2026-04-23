@@ -5,6 +5,7 @@ using HealthCareMS.Domain.Identity;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace HealthCareMS.Infrastructure.Identity;
 
@@ -13,6 +14,9 @@ public sealed class IdentityManagementService(
     ICurrentUser currentUser,
     IPasswordHasher passwordHasher) : IIdentityManagementService
 {
+    private const string NavigationSettingKey = "Platform.Navigation.MenuConfigJson";
+    private const string NavigationAssignmentSettingPrefix = "Navigation.Assignment.User.";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public async Task<IReadOnlyList<PermissionResponse>> GetPermissionsAsync(CancellationToken cancellationToken)
     {
         return await dbContext.Permissions
@@ -171,6 +175,75 @@ public sealed class IdentityManagementService(
         }
 
         return Result<PermissionGrantResponse>.Failure(new Error("PERMISSION_TARGET_INVALID", "TargetType must be Role or User."));
+    }
+
+    public async Task<Result<UserMenuAssignmentResponse>> GetUserMenuAssignmentAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var targetUser = await dbContext.Users
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        if (targetUser is null)
+        {
+            return Result<UserMenuAssignmentResponse>.Failure(new Error("USER_NOT_FOUND", "User was not found."));
+        }
+
+        if (!CanManageUserMenus(targetUser))
+        {
+            return Result<UserMenuAssignmentResponse>.Failure(new Error("USER_MENU_FORBIDDEN", "You cannot view this user's menu assignment."));
+        }
+
+        var assignment = await ReadUserAssignmentAsync(userId, cancellationToken);
+        return Result<UserMenuAssignmentResponse>.Success(new UserMenuAssignmentResponse(
+            userId,
+            assignment.MenuItemKeys,
+            assignment.UpdatedAt));
+    }
+
+    public async Task<Result<UserMenuAssignmentResponse>> AssignUserMenuAsync(
+        Guid userId,
+        AssignUserMenuRequest request,
+        CancellationToken cancellationToken)
+    {
+        var targetUser = await dbContext.Users
+            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        if (targetUser is null)
+        {
+            return Result<UserMenuAssignmentResponse>.Failure(new Error("USER_NOT_FOUND", "User was not found."));
+        }
+
+        if (!CanManageUserMenus(targetUser))
+        {
+            return Result<UserMenuAssignmentResponse>.Failure(new Error("USER_MENU_FORBIDDEN", "You cannot assign menus for this user."));
+        }
+
+        var menuItemKeys = (request.MenuItemKeys ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var assignableKeysResult = await GetAssignableMenuKeysForCurrentUserAsync(cancellationToken);
+        if (assignableKeysResult.IsFailure)
+        {
+            return Result<UserMenuAssignmentResponse>.Failure(assignableKeysResult.Error);
+        }
+
+        var invalidKeys = menuItemKeys
+            .Where(x => !assignableKeysResult.Value.Contains(x))
+            .ToArray();
+        if (invalidKeys.Length > 0)
+        {
+            return Result<UserMenuAssignmentResponse>.Failure(new Error(
+                "USER_MENU_CEILING_EXCEEDED",
+                $"Cannot assign menus outside your ceiling: {string.Join(", ", invalidKeys)}."));
+        }
+
+        await UpsertUserAssignmentAsync(userId, menuItemKeys, cancellationToken);
+        var saved = await ReadUserAssignmentAsync(userId, cancellationToken);
+        return Result<UserMenuAssignmentResponse>.Success(new UserMenuAssignmentResponse(
+            userId,
+            saved.MenuItemKeys,
+            saved.UpdatedAt));
     }
 
     private async Task<Result<PermissionGrantResponse>> GrantRolePermissionsAsync(
@@ -347,6 +420,121 @@ public sealed class IdentityManagementService(
         return currentUser.IsSuperAdmin || (currentUser.TenantId.HasValue && targetTenantId == currentUser.TenantId.Value);
     }
 
+    private bool CanManageUserMenus(ApplicationUser targetUser)
+    {
+        if (!CanAccessTenant(targetUser.TenantId))
+        {
+            return false;
+        }
+
+        if (currentUser.IsSuperAdmin)
+        {
+            return true;
+        }
+
+        return targetUser.CreatedByUserId.HasValue && targetUser.CreatedByUserId == currentUser.UserId;
+    }
+
+    private async Task<Result<IReadOnlySet<string>>> GetAssignableMenuKeysForCurrentUserAsync(CancellationToken cancellationToken)
+    {
+        var setting = await dbContext.SystemSettings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
+        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+        {
+            return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
+        }
+
+        NavigationConfigPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<NavigationConfigPayload>(setting.Value, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_INVALID", "Navigation configuration JSON is invalid."));
+        }
+
+        if (payload?.Groups is null)
+        {
+            return Result<IReadOnlySet<string>>.Failure(new Error("NAVIGATION_CONFIG_EMPTY", "Navigation configuration does not contain any groups."));
+        }
+
+        var currentAssignment = await ReadUserAssignmentAsync(currentUser.UserId ?? Guid.Empty, cancellationToken);
+        var allowedByAssignment = currentAssignment.MenuItemKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var permissionSet = currentUser.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var keys = payload.Groups
+            .SelectMany(x => x.Items ?? [])
+            .Where(x =>
+                currentUser.IsSuperAdmin
+                || ((x.RequiredPermissions is null || x.RequiredPermissions.Count == 0)
+                    || x.RequiredPermissions.Any(permissionSet.Contains)))
+            .Where(x => currentUser.IsSuperAdmin || allowedByAssignment.Count == 0 || allowedByAssignment.Contains(x.Key))
+            .Select(x => x.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return Result<IReadOnlySet<string>>.Success(keys);
+    }
+
+    private async Task<AssignmentReadModel> ReadUserAssignmentAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty)
+        {
+            return new AssignmentReadModel([], DateTimeOffset.UtcNow);
+        }
+
+        var settingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
+        var setting = await dbContext.SystemSettings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.SettingKey == settingKey, cancellationToken);
+        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+        {
+            return new AssignmentReadModel([], DateTimeOffset.UtcNow);
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<UserNavigationAssignmentPayload>(setting.Value, JsonOptions);
+            var keys = (payload?.MenuItemKeys ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return new AssignmentReadModel(keys, setting.UpdatedAt ?? setting.CreatedAt);
+        }
+        catch (JsonException)
+        {
+            return new AssignmentReadModel([], setting.UpdatedAt ?? setting.CreatedAt);
+        }
+    }
+
+    private async Task UpsertUserAssignmentAsync(Guid userId, IReadOnlyList<string> menuItemKeys, CancellationToken cancellationToken)
+    {
+        var settingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
+        var setting = await dbContext.SystemSettings
+            .SingleOrDefaultAsync(x => x.SettingKey == settingKey, cancellationToken);
+        var value = JsonSerializer.Serialize(new UserNavigationAssignmentPayload(menuItemKeys), JsonOptions);
+        if (setting is null)
+        {
+            dbContext.SystemSettings.Add(new SystemSetting
+            {
+                SettingKey = settingKey,
+                GroupName = "Platform",
+                DisplayName = $"Menu assignment for user {userId}",
+                Value = value,
+                ValueType = "Json",
+                Description = "User-level menu assignment for permission-based navigation.",
+                IsEditable = true
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        setting.Value = value;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private static RoleResponse Map(Role role)
     {
         return new RoleResponse(
@@ -450,4 +638,20 @@ public sealed class IdentityManagementService(
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
+
+    private sealed record UserNavigationAssignmentPayload(IReadOnlyList<string> MenuItemKeys);
+
+    private sealed record NavigationConfigPayload(IReadOnlyList<NavigationGroupPayload> Groups);
+
+    private sealed record NavigationGroupPayload(
+        string Key,
+        int SortOrder,
+        IReadOnlyList<NavigationItemPayload> Items);
+
+    private sealed record NavigationItemPayload(
+        string Key,
+        int SortOrder,
+        IReadOnlyList<string>? RequiredPermissions);
+
+    private sealed record AssignmentReadModel(IReadOnlyList<string> MenuItemKeys, DateTimeOffset UpdatedAt);
 }

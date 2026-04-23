@@ -80,3 +80,20 @@ public sealed class UpdateSystemSettingModel
 {
     public string Value { get; set; } = string.Empty;
 }
+
+public sealed record NavigationConfigurationModel(string ConfigurationJson);
+
+public sealed class UpdateNavigationConfigurationModel
+{
+    public string ConfigurationJson { get; set; } = string.Empty;
+}
+
+public sealed record UserMenuAssignmentModel(
+    Guid UserId,
+    IReadOnlyList<string> MenuItemKeys,
+    DateTimeOffset UpdatedAt);
+
+public sealed class AssignUserMenuModel
+{
+    public IReadOnlyList<string> MenuItemKeys { get; set; } = [];
+}

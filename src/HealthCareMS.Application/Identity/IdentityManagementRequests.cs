@@ -20,3 +20,5 @@ public sealed record GrantPermissionsRequest(
     Guid TargetId,
     IReadOnlyList<string> PermissionKeys,
     bool IsGranted = true);
+
+public sealed record AssignUserMenuRequest(IReadOnlyList<string> MenuItemKeys);

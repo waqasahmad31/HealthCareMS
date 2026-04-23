@@ -210,9 +210,12 @@ public sealed class ConsultationSessionService(
 
     private string BuildMeetingLink(Guid appointmentId)
     {
-        var baseUrl = string.IsNullOrWhiteSpace(options.ClientBaseUrl)
-            ? "http://localhost:5157"
-            : options.ClientBaseUrl.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(options.ClientBaseUrl))
+        {
+            throw new InvalidOperationException("Agora:ClientBaseUrl configuration is required.");
+        }
+
+        var baseUrl = options.ClientBaseUrl.TrimEnd('/');
 
         return $"{baseUrl}/consultation/waiting-room/{appointmentId}";
     }

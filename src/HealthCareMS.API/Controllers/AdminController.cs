@@ -79,4 +79,22 @@ public sealed class AdminController(IAdminOperationsService adminOperationsServi
         var result = await adminOperationsService.UpdateSystemSettingAsync(settingKey, request, cancellationToken);
         return FromResult(result);
     }
+
+    [HttpGet("navigation/configuration")]
+    [RequirePermission(PermissionKeys.System.UsersViewAll)]
+    public async Task<IActionResult> GetNavigationConfiguration(CancellationToken cancellationToken)
+    {
+        var result = await adminOperationsService.GetNavigationConfigurationAsync(cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("navigation/configuration")]
+    [RequirePermission(PermissionKeys.System.UsersViewAll)]
+    public async Task<IActionResult> UpdateNavigationConfiguration(
+        UpdateNavigationConfigurationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await adminOperationsService.UpdateNavigationConfigurationAsync(request, cancellationToken);
+        return FromResult(result);
+    }
 }

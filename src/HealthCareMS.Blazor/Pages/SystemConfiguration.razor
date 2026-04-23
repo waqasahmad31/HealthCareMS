@@ -1,60 +1,224 @@
 @page "/admin/system-configuration"
+@implements IAsyncDisposable
 @using HealthCareMS.Blazor.Models
 @using HealthCareMS.Blazor.Services
+@using System.Text.Json
 @inject HealthCareApiClient ApiClient
+@inject IJSRuntime JS
 
 <PageTitle>System Configuration</PageTitle>
 
 <section class="dashboard-header">
     <div>
-        <p class="eyebrow">Admin</p>
+        <p class="eyebrow">Enterprise Admin Control Center</p>
         <h1>System Configuration</h1>
     </div>
-    <button class="primary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Load</button>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadNavigationConfigurationAsync" disabled="@IsBusy">Reload Navigation</button>
+        <button class="primary-button" type="button" @onclick="LoadAsync" disabled="@IsBusy">Refresh Settings</button>
+    </div>
 </section>
 
-@if (Configuration is not null)
-{
-    @foreach (var group in Configuration.Settings.GroupBy(x => x.GroupName))
-    {
+<section class="system-config-workspace">
+    <div class="system-config-main">
+        @if (Configuration is not null)
+        {
+            @foreach (var group in Configuration.Settings.GroupBy(x => x.GroupName))
+            {
+                <section class="panel system-config-panel">
+                    <div class="panel-header">
+                        <h2>@group.Key</h2>
+                        <span class="status-pill blue">@group.Count() settings</span>
+                    </div>
+                    <div class="table-shell">
+                        @foreach (var setting in group)
+                        {
+                            <div class="table-row system-setting-row">
+                                <div>
+                                    <strong>@setting.DisplayName</strong>
+                                    <span>@setting.SettingKey</span>
+                                </div>
+                                <div>
+                                    @if (setting.ValueType == "Boolean")
+                                    {
+                                        <select value="@GetValue(setting.SettingKey)" @onchange="args => SetValue(setting.SettingKey, args.Value?.ToString() ?? string.Empty)" disabled="@(!setting.IsEditable)">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <input value="@GetValue(setting.SettingKey)" @onchange="args => SetValue(setting.SettingKey, args.Value?.ToString() ?? string.Empty)" disabled="@(!setting.IsEditable)" />
+                                    }
+                                </div>
+                                <span>@setting.ValueType</span>
+                                <button class="secondary-button small-button" type="button" @onclick="() => SaveAsync(setting)" disabled="@(IsBusy || !setting.IsEditable)">Save</button>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+        }
+    </div>
+
+    <div class="system-config-side">
         <section class="panel system-config-panel">
             <div class="panel-header">
-                <h2>@group.Key</h2>
-                <span class="status-pill blue">@group.Count()</span>
+                <h2>User Menu Assignment</h2>
             </div>
-            <div class="table-shell">
-                @foreach (var setting in group)
-                {
-                    <div class="table-row system-setting-row">
-                        <div>
-                            <strong>@setting.DisplayName</strong>
-                            <span>@setting.SettingKey</span>
+            <div class="entity-form assignment-grid">
+                <label>
+                    Target User Id
+                    <InputText @bind-Value="MenuAssignmentUserId" placeholder="Enter user GUID" />
+                </label>
+                <div class="json-actions">
+                    <button class="secondary-button small-button" type="button" @onclick="TryLoadUserMenuAssignmentAsync" disabled="@IsBusy">Load Assignment</button>
+                    <button class="primary-button small-button" type="button" @onclick="SaveUserMenuAssignmentAsync" disabled="@IsBusy">Save Assignment</button>
+                </div>
+            </div>
+
+            @if (NavigationGroups.Count > 0)
+            {
+                <div class="sticky-assignment-bar">
+                    <span class="status-pill @(HasUnsavedAssignmentChanges() ? "amber" : "green")">
+                        @(HasUnsavedAssignmentChanges() ? "Unsaved changes" : "Saved")
+                    </span>
+                    <span class="tone-muted">Shortcut: Ctrl+S</span>
+                    <button class="primary-button small-button" type="button" @onclick="SaveUserMenuAssignmentAsync" disabled="@IsBusy">Save Assignment</button>
+                </div>
+
+                <div class="menu-tools">
+                    <label>
+                        Search Menus
+                        <input value="@MenuSearchQuery" @oninput="OnMenuSearchChanged" placeholder="Search by label or key" />
+                    </label>
+                    @if (!string.IsNullOrWhiteSpace(MenuSearchQuery))
+                    {
+                        <div class="menu-search-actions">
+                            <button class="secondary-button small-button" type="button" @onclick="SelectVisibleResults">Select Visible</button>
+                            <button class="secondary-button small-button" type="button" @onclick="ClearVisibleResults">Clear Visible</button>
                         </div>
-                        <div>
-                            @if (setting.ValueType == "Boolean")
-                            {
-                                <select value="@GetValue(setting.SettingKey)" @onchange="args => SetValue(setting.SettingKey, args.Value?.ToString() ?? string.Empty)" disabled="@(!setting.IsEditable)">
-                                    <option value="true">true</option>
-                                    <option value="false">false</option>
-                                </select>
-                            }
-                            else
-                            {
-                                <input value="@GetValue(setting.SettingKey)" @onchange="args => SetValue(setting.SettingKey, args.Value?.ToString() ?? string.Empty)" disabled="@(!setting.IsEditable)" />
-                            }
+                    }
+                </div>
+                <div class="menu-picker">
+                    @foreach (var group in FilteredNavigationGroups)
+                    {
+                        <div class="menu-group-card">
+                            <div class="menu-group-head">
+                                <button class="group-toggle-button" type="button" @onclick="() => ToggleGroupCollapse(group.Key)">
+                                    @(IsGroupCollapsed(group.Key) ? "+" : "-")
+                                </button>
+                                <div class="menu-group-title">@group.Label</div>
+                                <span class="status-pill blue">@GetSelectedCount(group) selected</span>
+                                <div class="menu-group-actions">
+                                    <button class="secondary-button small-button" type="button" @onclick="() => SelectAllInGroup(group)">All</button>
+                                    <button class="secondary-button small-button" type="button" @onclick="() => ClearAllInGroup(group)">Clear</button>
+                                </div>
+                            </div>
+                            <div class="menu-group-body @(IsGroupCollapsed(group.Key) ? "collapsed" : "expanded")">
+                                @foreach (var item in group.Items.OrderBy(x => x.Label))
+                                {
+                                    <label class="menu-option">
+                                        <input
+                                            type="checkbox"
+                                            checked="@SelectedMenuKeys.Contains(item.Key)"
+                                            @onchange="args => ToggleMenuSelection(item.Key, args.Value is bool value && value)" />
+                                        <span>
+                                            <strong>@item.Label</strong>
+                                            <small>@item.Key</small>
+                                        </span>
+                                    </label>
+                                }
+                            </div>
                         </div>
-                        <span>@setting.ValueType</span>
-                        <button class="secondary-button small-button" type="button" @onclick="() => SaveAsync(setting)" disabled="@(IsBusy || !setting.IsEditable)">Save</button>
-                    </div>
-                }
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="tone-muted">Load navigation configuration to render premium menu picker.</p>
+            }
+        </section>
+
+        <section class="panel system-config-panel">
+            <div class="panel-header">
+                <h2>Navigation Configuration JSON</h2>
+            </div>
+            <div class="entity-form">
+                <label>
+                    Advanced JSON Editor
+                    <textarea class="json-editor" value="@NavigationConfigurationJson" @oninput="OnNavigationJsonChanged"></textarea>
+                </label>
+                <div class="json-actions">
+                    <button class="secondary-button small-button" type="button" @onclick="ValidateNavigationJson">Validate JSON</button>
+                    <button class="primary-button small-button" type="button" @onclick="SaveNavigationConfigurationAsync" disabled="@IsBusy">Save JSON</button>
+                </div>
             </div>
         </section>
-    }
+
+        <section class="panel system-config-panel">
+            <div class="panel-header">
+                <h2>Live Preview</h2>
+                <span class="status-pill blue">@SelectedMenuKeys.Count selected</span>
+            </div>
+            @if (SelectedPreviewGroups.Any())
+            {
+                <div class="preview-list">
+                    @foreach (var group in SelectedPreviewGroups)
+                    {
+                        <div class="preview-group">
+                            <strong>@group.Label</strong>
+                            <div class="preview-chips">
+                                @foreach (var item in group.Items.OrderBy(x => x.Label))
+                                {
+                                    <span>@item.Label</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="tone-muted">No menus selected yet.</p>
+            }
+        </section>
+    </div>
+</section>
+
+@if (ShowUnsavedModal)
+{
+    <div class="unsaved-backdrop">
+        <div class="unsaved-modal">
+            <h3>Unsaved Assignment Changes</h3>
+            <p>Your current menu selection is not saved. Continue and discard changes?</p>
+            <div class="json-actions">
+                <button class="secondary-button" type="button" @onclick="CancelPendingAction">Cancel</button>
+                <button class="primary-button" type="button" @onclick="ConfirmPendingActionAsync">Continue</button>
+            </div>
+        </div>
+    </div>
 }
 
 @if (!string.IsNullOrWhiteSpace(StatusMessage))
 {
     <p class="@StatusClass">@StatusMessage</p>
+}
+
+@if (Toasts.Count > 0)
+{
+    <div class="toast-stack">
+        @foreach (var toast in Toasts)
+        {
+            <div class="toast-item">
+                <span>@toast.Message</span>
+                @if (!toast.IsExpired)
+                {
+                    <button class="secondary-button small-button" type="button" @onclick="() => UndoToastAsync(toast.Id)">Undo</button>
+                }
+            </div>
+        }
+    </div>
 }
 
 @code {
@@ -68,9 +232,70 @@
 
     private string StatusClass { get; set; } = "tone-muted";
 
+    private string NavigationConfigurationJson { get; set; } = string.Empty;
+
+    private string MenuAssignmentUserId { get; set; } = string.Empty;
+
+    private string MenuSearchQuery { get; set; } = string.Empty;
+
+    private List<MenuGroupOption> NavigationGroups { get; set; } = [];
+
+    private HashSet<string> SelectedMenuKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    private HashSet<string> LastSavedSelectedMenuKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    private string LastSavedNavigationConfigurationJson { get; set; } = string.Empty;
+
+    private bool ShowUnsavedModal { get; set; }
+
+    private Func<Task>? PendingAction { get; set; }
+
+    private DotNetObjectReference<SystemConfiguration>? DotNetReference { get; set; }
+
+    private HashSet<string> CollapsedGroupKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    private List<UndoToastModel> Toasts { get; } = [];
+
+    private IEnumerable<MenuGroupOption> FilteredNavigationGroups =>
+        string.IsNullOrWhiteSpace(MenuSearchQuery)
+            ? NavigationGroups
+            : NavigationGroups
+                .Select(group =>
+                    new MenuGroupOption(
+                        group.Key,
+                        group.Label,
+                        group.Items.Where(item =>
+                                item.Label.Contains(MenuSearchQuery, StringComparison.OrdinalIgnoreCase)
+                                || item.Key.Contains(MenuSearchQuery, StringComparison.OrdinalIgnoreCase))
+                            .ToList()))
+                .Where(group => group.Items.Count > 0);
+
+    private IEnumerable<MenuGroupOption> SelectedPreviewGroups =>
+        NavigationGroups
+            .Select(group =>
+                new MenuGroupOption(
+                    group.Key,
+                    group.Label,
+                    group.Items.Where(item => SelectedMenuKeys.Contains(item.Key)).ToList()))
+            .Where(group => group.Items.Count > 0);
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+        await LoadNavigationConfigurationAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        DotNetReference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("healthCareAdminShortcuts.register", DotNetReference);
+        await LoadCollapsedGroupsAsync();
+        StateHasChanged();
     }
 
     private async Task LoadAsync()
@@ -113,6 +338,224 @@
         SetStatus(result?.Error?.Message ?? "System setting update failed.", "tone-amber");
     }
 
+    private async Task LoadNavigationConfigurationAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<NavigationConfigurationModel>("api/v1/admin/navigation/configuration");
+        IsBusy = false;
+        if (result?.Success == true && result.Data is not null)
+        {
+            NavigationConfigurationJson = result.Data.ConfigurationJson;
+            LastSavedNavigationConfigurationJson = result.Data.ConfigurationJson;
+            RebuildNavigationOptions();
+            SetStatus("Navigation configuration loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Navigation configuration unavailable.", "tone-amber");
+    }
+
+    private async Task SaveNavigationConfigurationAsync()
+    {
+        if (!IsValidJson(NavigationConfigurationJson))
+        {
+            SetStatus("Navigation configuration JSON is invalid.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdateNavigationConfigurationModel, NavigationConfigurationModel>(
+            "api/v1/admin/navigation/configuration",
+            new UpdateNavigationConfigurationModel { ConfigurationJson = NavigationConfigurationJson });
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            RebuildNavigationOptions();
+            LastSavedNavigationConfigurationJson = NavigationConfigurationJson;
+            SetStatus("Navigation configuration saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Navigation configuration save failed.", "tone-amber");
+    }
+
+    private async Task TryLoadUserMenuAssignmentAsync()
+    {
+        if (HasUnsavedAssignmentChanges())
+        {
+            PendingAction = LoadUserMenuAssignmentAsync;
+            ShowUnsavedModal = true;
+            return;
+        }
+
+        await LoadUserMenuAssignmentAsync();
+    }
+
+    private async Task LoadUserMenuAssignmentAsync()
+    {
+        if (!Guid.TryParse(MenuAssignmentUserId, out var userId))
+        {
+            SetStatus("Valid User Id is required.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<UserMenuAssignmentModel>($"api/v1/users/{userId}/menu-assignment");
+        IsBusy = false;
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedMenuKeys.Clear();
+            foreach (var key in result.Data.MenuItemKeys)
+            {
+                SelectedMenuKeys.Add(key);
+            }
+            LastSavedSelectedMenuKeys.Clear();
+            foreach (var key in result.Data.MenuItemKeys)
+            {
+                LastSavedSelectedMenuKeys.Add(key);
+            }
+            SetStatus("User menu assignment loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "User menu assignment unavailable.", "tone-amber");
+    }
+
+    private async Task SaveUserMenuAssignmentAsync()
+    {
+        if (!Guid.TryParse(MenuAssignmentUserId, out var userId))
+        {
+            SetStatus("Valid User Id is required.", "tone-amber");
+            return;
+        }
+
+        var keys = SelectedMenuKeys.OrderBy(x => x).ToArray();
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<AssignUserMenuModel, UserMenuAssignmentModel>(
+            $"api/v1/users/{userId}/menu-assignment",
+            new AssignUserMenuModel { MenuItemKeys = keys });
+        IsBusy = false;
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedMenuKeys.Clear();
+            foreach (var key in result.Data.MenuItemKeys)
+            {
+                SelectedMenuKeys.Add(key);
+            }
+            LastSavedSelectedMenuKeys.Clear();
+            foreach (var key in result.Data.MenuItemKeys)
+            {
+                LastSavedSelectedMenuKeys.Add(key);
+            }
+            SetStatus("User menu assignment saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "User menu assignment save failed.", "tone-amber");
+    }
+
+    private void ValidateNavigationJson()
+    {
+        var isValid = IsValidJson(NavigationConfigurationJson);
+        SetStatus(
+            isValid ? "Navigation JSON is valid." : "Navigation JSON is invalid.",
+            isValid ? "tone-green" : "tone-amber");
+    }
+
+    private void OnNavigationJsonChanged(ChangeEventArgs args)
+    {
+        NavigationConfigurationJson = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnMenuSearchChanged(ChangeEventArgs args)
+    {
+        MenuSearchQuery = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void ToggleGroupCollapse(string groupKey)
+    {
+        if (CollapsedGroupKeys.Contains(groupKey))
+        {
+            CollapsedGroupKeys.Remove(groupKey);
+        }
+        else
+        {
+            CollapsedGroupKeys.Add(groupKey);
+        }
+
+        _ = PersistCollapsedGroupsAsync();
+    }
+
+    private bool IsGroupCollapsed(string groupKey)
+    {
+        return CollapsedGroupKeys.Contains(groupKey);
+    }
+
+    private void ToggleMenuSelection(string key, bool isSelected)
+    {
+        if (isSelected)
+        {
+            SelectedMenuKeys.Add(key);
+            return;
+        }
+
+        if (SelectedMenuKeys.Remove(key))
+        {
+            RegisterUndoToast(key);
+        }
+    }
+
+    private void SelectAllInGroup(MenuGroupOption group)
+    {
+        foreach (var item in group.Items)
+        {
+            SelectedMenuKeys.Add(item.Key);
+        }
+    }
+
+    private void ClearAllInGroup(MenuGroupOption group)
+    {
+        foreach (var item in group.Items)
+        {
+            if (SelectedMenuKeys.Remove(item.Key))
+            {
+                RegisterUndoToast(item.Key);
+            }
+        }
+    }
+
+    private void SelectVisibleResults()
+    {
+        foreach (var group in FilteredNavigationGroups)
+        {
+            foreach (var item in group.Items)
+            {
+                SelectedMenuKeys.Add(item.Key);
+            }
+        }
+    }
+
+    private void ClearVisibleResults()
+    {
+        foreach (var group in FilteredNavigationGroups)
+        {
+            foreach (var item in group.Items)
+            {
+                if (SelectedMenuKeys.Remove(item.Key))
+                {
+                    RegisterUndoToast(item.Key);
+                }
+            }
+        }
+    }
+
+    private int GetSelectedCount(MenuGroupOption group)
+    {
+        return group.Items.Count(item => SelectedMenuKeys.Contains(item.Key));
+    }
+
     private string GetValue(string settingKey)
     {
         return SettingValues.TryGetValue(settingKey, out var value) ? value : string.Empty;
@@ -127,5 +570,210 @@
     {
         StatusMessage = message;
         StatusClass = statusClass;
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private bool HasUnsavedAssignmentChanges()
+    {
+        return !SelectedMenuKeys.SetEquals(LastSavedSelectedMenuKeys);
+    }
+
+    private void CancelPendingAction()
+    {
+        ShowUnsavedModal = false;
+        PendingAction = null;
+    }
+
+    private async Task ConfirmPendingActionAsync()
+    {
+        var action = PendingAction;
+        ShowUnsavedModal = false;
+        PendingAction = null;
+        if (action is not null)
+        {
+            await action();
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleSaveShortcutAsync()
+    {
+        if (HasUnsavedAssignmentChanges() && !IsBusy)
+        {
+            await SaveUserMenuAssignmentAsync();
+        }
+    }
+
+    private void RebuildNavigationOptions()
+    {
+        NavigationGroups = [];
+        if (!IsValidJson(NavigationConfigurationJson))
+        {
+            return;
+        }
+
+        using var document = JsonDocument.Parse(NavigationConfigurationJson);
+        if (!document.RootElement.TryGetProperty("groups", out var groupsElement) || groupsElement.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var parsedGroups = new List<MenuGroupOption>();
+        foreach (var group in groupsElement.EnumerateArray())
+        {
+            if (!group.TryGetProperty("key", out var keyElement))
+            {
+                continue;
+            }
+
+            var groupKey = keyElement.GetString() ?? string.Empty;
+            var groupLabel = groupKey;
+            if (group.TryGetProperty("labels", out var labelsElement)
+                && labelsElement.TryGetProperty("en", out var englishLabel)
+                && englishLabel.ValueKind == JsonValueKind.String)
+            {
+                groupLabel = englishLabel.GetString() ?? groupKey;
+            }
+
+            var items = new List<MenuItemOption>();
+            if (group.TryGetProperty("items", out var itemsElement) && itemsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in itemsElement.EnumerateArray())
+                {
+                    if (!item.TryGetProperty("key", out var itemKeyElement) || itemKeyElement.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var itemKey = itemKeyElement.GetString() ?? string.Empty;
+                    var itemLabel = itemKey;
+                    if (item.TryGetProperty("label", out var labelElement)
+                        && labelElement.TryGetProperty("en", out var itemEnglishLabel)
+                        && itemEnglishLabel.ValueKind == JsonValueKind.String)
+                    {
+                        itemLabel = itemEnglishLabel.GetString() ?? itemKey;
+                    }
+
+                    items.Add(new MenuItemOption(itemKey, itemLabel));
+                }
+            }
+
+            if (items.Count > 0)
+            {
+                parsedGroups.Add(new MenuGroupOption(groupKey, groupLabel, items));
+            }
+        }
+
+        NavigationGroups = parsedGroups;
+    }
+
+    private async Task LoadCollapsedGroupsAsync()
+    {
+        var value = await JS.InvokeAsync<string?>("localStorage.getItem", "HealthCareMS.SystemConfig.CollapsedGroups");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        try
+        {
+            var keys = JsonSerializer.Deserialize<string[]>(value) ?? [];
+            CollapsedGroupKeys.Clear();
+            foreach (var key in keys.Where(x => !string.IsNullOrWhiteSpace(x)))
+            {
+                CollapsedGroupKeys.Add(key);
+            }
+        }
+        catch (JsonException)
+        {
+        }
+    }
+
+    private async Task PersistCollapsedGroupsAsync()
+    {
+        var json = JsonSerializer.Serialize(CollapsedGroupKeys.OrderBy(x => x).ToArray());
+        await JS.InvokeVoidAsync("localStorage.setItem", "HealthCareMS.SystemConfig.CollapsedGroups", json);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("healthCareAdminShortcuts.unregister");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        DotNetReference?.Dispose();
+    }
+
+    private void RegisterUndoToast(string key)
+    {
+        var toast = new UndoToastModel(Guid.NewGuid(), $"Removed menu '{key}'.", key);
+        Toasts.Insert(0, toast);
+        _ = ExpireToastAsync(toast.Id);
+    }
+
+    private async Task ExpireToastAsync(Guid id)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(6));
+        var toast = Toasts.FirstOrDefault(x => x.Id == id);
+        if (toast is null || toast.IsExpired)
+        {
+            return;
+        }
+
+        toast.IsExpired = true;
+        StateHasChanged();
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        Toasts.RemoveAll(x => x.Id == id);
+        StateHasChanged();
+    }
+
+    private Task UndoToastAsync(Guid id)
+    {
+        var toast = Toasts.FirstOrDefault(x => x.Id == id);
+        if (toast is null || toast.IsExpired)
+        {
+            return Task.CompletedTask;
+        }
+
+        SelectedMenuKeys.Add(toast.MenuKey);
+        toast.IsExpired = true;
+        Toasts.RemoveAll(x => x.Id == id);
+        return Task.CompletedTask;
+    }
+
+    private sealed record MenuGroupOption(string Key, string Label, IReadOnlyList<MenuItemOption> Items);
+
+    private sealed record MenuItemOption(string Key, string Label);
+
+    private sealed class UndoToastModel(Guid id, string message, string menuKey)
+    {
+        public Guid Id { get; } = id;
+
+        public string Message { get; } = message;
+
+        public string MenuKey { get; } = menuKey;
+
+        public bool IsExpired { get; set; }
     }
 }

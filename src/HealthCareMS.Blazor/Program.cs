@@ -7,7 +7,12 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var apiBaseAddress = builder.Configuration["ApiBaseAddress"] ?? "http://localhost:5270/";
+var apiBaseAddress = builder.Configuration["ApiBaseAddress"];
+if (string.IsNullOrWhiteSpace(apiBaseAddress))
+{
+    throw new InvalidOperationException("Configuration key 'ApiBaseAddress' is required.");
+}
+
 var apiEndpoints = new ApiEndpointOptions(apiBaseAddress);
 
 builder.Services.AddSingleton(apiEndpoints);

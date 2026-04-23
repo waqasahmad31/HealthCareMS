@@ -68,3 +68,22 @@ public sealed record SystemSettingResponse(
     DateTimeOffset? UpdatedAt);
 
 public sealed record SystemConfigurationResponse(IReadOnlyList<SystemSettingResponse> Settings);
+
+public sealed record NavigationMenuResponse(
+    string Culture,
+    IReadOnlyList<NavigationMenuGroupResponse> Groups);
+
+public sealed record NavigationMenuGroupResponse(
+    string Key,
+    string Label,
+    int SortOrder,
+    IReadOnlyList<NavigationMenuItemResponse> Items);
+
+public sealed record NavigationMenuItemResponse(
+    string Key,
+    string Label,
+    string Icon,
+    string Route,
+    int SortOrder);
+
+public sealed record NavigationConfigurationResponse(string ConfigurationJson);

@@ -1,15 +1,20 @@
 using HealthCareMS.Application.Admin;
+using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace HealthCareMS.Infrastructure.Admin;
 
-public sealed class AdminOperationsService(HealthCareDbContext dbContext) : IAdminOperationsService
+public sealed class AdminOperationsService(HealthCareDbContext dbContext, ICurrentUser? currentUser = null) : IAdminOperationsService
 {
+    private const string NavigationSettingKey = "Platform.Navigation.MenuConfigJson";
+    private const string NavigationAssignmentSettingPrefix = "Navigation.Assignment.User.";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly SystemSetting[] DefaultSettings =
     [
         Setting("Platform.TimeZone", "Platform", "Time zone", "Asia/Karachi", "String", "Default platform time zone."),
@@ -20,7 +25,16 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext) : IAdm
         Setting("Notifications.SmsEnabled", "Notifications", "SMS enabled", "false", "Boolean", "Allow outgoing SMS notifications."),
         Setting("Appointments.Reminder24HrEnabled", "Appointments", "24hr reminders", "true", "Boolean", "Schedule appointment reminders 24 hours before visit."),
         Setting("Appointments.Reminder2HrEnabled", "Appointments", "2hr reminders", "true", "Boolean", "Schedule appointment reminders 2 hours before visit."),
-        Setting("Performance.SlowQueryThresholdMs", "Performance", "Slow query threshold", "500", "Number", "Threshold used by admins during performance reviews.")
+        Setting("Performance.SlowQueryThresholdMs", "Performance", "Slow query threshold", "500", "Number", "Threshold used by admins during performance reviews."),
+        Setting(
+            NavigationSettingKey,
+            "Platform",
+            "Navigation menu configuration",
+            """
+            {"groups":[{"key":"general","sortOrder":10,"labels":{"en":"General","ur":"جنرل"},"items":[{"key":"dashboard","label":{"en":"Dashboard","ur":"ڈیش بورڈ"},"icon":"D","route":"","sortOrder":10},{"key":"notifications","label":{"en":"Notifications","ur":"نوٹیفکیشنز"},"icon":"N","route":"notifications","sortOrder":20}]},{"key":"admin","sortOrder":20,"labels":{"en":"Admin","ur":"ایڈمن"},"items":[{"key":"tenants","label":{"en":"Tenants","ur":"ٹیننٹس"},"icon":"T","route":"tenants","sortOrder":10,"requiredPermissions":["system.tenants.create"]},{"key":"doctors","label":{"en":"Doctors","ur":"ڈاکٹرز"},"icon":"V","route":"admin/doctors","sortOrder":20,"requiredPermissions":["doctor.verify"]},{"key":"config","label":{"en":"Configuration","ur":"کنفیگریشن"},"icon":"K","route":"admin/system-configuration","sortOrder":30,"requiredPermissions":["tenant.settings.update"]}]},{"key":"operations","sortOrder":30,"labels":{"en":"Operations","ur":"آپریشنز"},"items":[{"key":"doctor-portal","label":{"en":"Doctor Portal","ur":"ڈاکٹر پورٹل"},"icon":"D","route":"portal/doctor","sortOrder":10,"requiredPermissions":["doctor.schedule.manage"]},{"key":"patient-portal","label":{"en":"Patient Portal","ur":"پیشنٹ پورٹل"},"icon":"U","route":"portal/patient","sortOrder":20,"requiredPermissions":["patient.records.view_own"]},{"key":"pharmacy","label":{"en":"Pharmacy","ur":"فارمیسی"},"icon":"R","route":"pharmacy","sortOrder":30,"requiredPermissions":["pharmacy.medicines.view"]},{"key":"lab","label":{"en":"Laboratory","ur":"لیبارٹری"},"icon":"L","route":"laboratory","sortOrder":40,"requiredPermissions":["lab.tests.view"]}]}]}
+            """,
+            "Json",
+            "JSON configuration for role and permission-based navigation menu (EN/UR).")
     ];
 
     public async Task<AdminAppointmentOverviewResponse> GetAppointmentOverviewAsync(
@@ -204,6 +218,87 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext) : IAdm
         return Result<SystemSettingResponse>.Success(MapSetting(setting));
     }
 
+    public async Task<Result<NavigationMenuResponse>> GetNavigationMenuAsync(
+        string? culture,
+        CancellationToken cancellationToken)
+    {
+        if (currentUser?.IsAuthenticated != true)
+        {
+            return Result<NavigationMenuResponse>.Failure(new Error("NAVIGATION_FORBIDDEN", "Only authenticated users can access navigation."));
+        }
+
+        await EnsureDefaultSettingsAsync(cancellationToken);
+
+        var configResult = await GetNavigationConfigPayloadAsync(cancellationToken);
+        if (configResult.IsFailure)
+        {
+            return Result<NavigationMenuResponse>.Failure(configResult.Error);
+        }
+
+        var normalizedCulture = string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase) ? "ur" : "en";
+        var assignmentKeys = await GetAssignedMenuKeysAsync(currentUser.UserId!.Value, cancellationToken);
+        var groups = configResult.Value.Groups
+            .OrderBy(x => x.SortOrder)
+            .Select(x => MapGroup(x, normalizedCulture, assignmentKeys))
+            .Where(x => x.Items.Count > 0)
+            .ToList();
+
+        return Result<NavigationMenuResponse>.Success(new NavigationMenuResponse(normalizedCulture, groups));
+    }
+
+    public async Task<Result<NavigationConfigurationResponse>> GetNavigationConfigurationAsync(CancellationToken cancellationToken)
+    {
+        await EnsureDefaultSettingsAsync(cancellationToken);
+        var setting = await dbContext.SystemSettings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
+        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+        {
+            return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
+        }
+
+        return Result<NavigationConfigurationResponse>.Success(new NavigationConfigurationResponse(setting.Value));
+    }
+
+    public async Task<Result<NavigationConfigurationResponse>> UpdateNavigationConfigurationAsync(
+        UpdateNavigationConfigurationRequest request,
+        CancellationToken cancellationToken)
+    {
+        await EnsureDefaultSettingsAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.ConfigurationJson))
+        {
+            return Result<NavigationConfigurationResponse>.Failure(Error.Validation([
+                new ValidationError(nameof(request.ConfigurationJson), "ConfigurationJson is required.")
+            ]));
+        }
+
+        NavigationConfigPayload? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<NavigationConfigPayload>(request.ConfigurationJson, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_INVALID", "Navigation configuration JSON is invalid."));
+        }
+
+        if (parsed?.Groups is null || parsed.Groups.Count == 0)
+        {
+            return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_EMPTY", "Navigation configuration does not contain any groups."));
+        }
+
+        var setting = await dbContext.SystemSettings
+            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
+        if (setting is null)
+        {
+            return Result<NavigationConfigurationResponse>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
+        }
+
+        setting.Value = request.ConfigurationJson.Trim();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Result<NavigationConfigurationResponse>.Success(new NavigationConfigurationResponse(setting.Value));
+    }
+
     private IQueryable<Appointment> AppointmentQuery()
     {
         return dbContext.Appointments
@@ -252,8 +347,134 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext) : IAdm
         {
             "Boolean" when !bool.TryParse(value, out _) => Result.Failure(new Error("ADMIN_SETTING_VALUE_INVALID", "Value must be true or false.")),
             "Number" when !decimal.TryParse(value, out _) => Result.Failure(new Error("ADMIN_SETTING_VALUE_INVALID", "Value must be numeric.")),
+            "Json" when !IsValidJson(value) => Result.Failure(new Error("ADMIN_SETTING_VALUE_INVALID", "Value must be valid JSON.")),
             _ => Result.Success()
         };
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private NavigationMenuGroupResponse MapGroup(
+        NavigationGroupPayload group,
+        string culture,
+        IReadOnlySet<string>? assignedKeys)
+    {
+        var label = SelectLocalizedValue(group.Labels, culture) ?? group.Key;
+        var items = (group.Items ?? [])
+            .Where(x => IsItemAuthorized(x, assignedKeys))
+            .OrderBy(x => x.SortOrder)
+            .Select(x => new NavigationMenuItemResponse(
+                x.Key,
+                SelectLocalizedValue(x.Label, culture) ?? x.Key,
+                string.IsNullOrWhiteSpace(x.Icon) ? "?" : x.Icon.Trim(),
+                x.Route?.Trim() ?? string.Empty,
+                x.SortOrder))
+            .ToList();
+
+        return new NavigationMenuGroupResponse(
+            group.Key,
+            label,
+            group.SortOrder,
+            items);
+    }
+
+    private bool IsItemAuthorized(NavigationItemPayload item, IReadOnlySet<string>? assignedKeys)
+    {
+        if (currentUser?.IsSuperAdmin == true)
+        {
+            return true;
+        }
+
+        if (assignedKeys is not null && assignedKeys.Count > 0 && !assignedKeys.Contains(item.Key))
+        {
+            return false;
+        }
+
+        if (item.RequiredPermissions is null || item.RequiredPermissions.Count == 0)
+        {
+            return true;
+        }
+
+        return item.RequiredPermissions.Any(permission =>
+            currentUser?.Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase) == true);
+    }
+
+    private async Task<Result<NavigationConfigPayload>> GetNavigationConfigPayloadAsync(CancellationToken cancellationToken)
+    {
+        var setting = await dbContext.SystemSettings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.SettingKey == NavigationSettingKey, cancellationToken);
+        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+        {
+            return Result<NavigationConfigPayload>.Failure(new Error("NAVIGATION_CONFIG_MISSING", "Navigation configuration is missing."));
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<NavigationConfigPayload>(setting.Value, JsonOptions);
+            if (payload?.Groups is null || payload.Groups.Count == 0)
+            {
+                return Result<NavigationConfigPayload>.Failure(new Error("NAVIGATION_CONFIG_EMPTY", "Navigation configuration does not contain any groups."));
+            }
+
+            return Result<NavigationConfigPayload>.Success(payload);
+        }
+        catch (JsonException)
+        {
+            return Result<NavigationConfigPayload>.Failure(new Error("NAVIGATION_CONFIG_INVALID", "Navigation configuration JSON is invalid."));
+        }
+    }
+
+    private async Task<IReadOnlySet<string>?> GetAssignedMenuKeysAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var settingKey = $"{NavigationAssignmentSettingPrefix}{userId:N}";
+        var setting = await dbContext.SystemSettings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.SettingKey == settingKey, cancellationToken);
+        if (setting is null || string.IsNullOrWhiteSpace(setting.Value))
+        {
+            return null;
+        }
+
+        try
+        {
+            var assignment = JsonSerializer.Deserialize<UserNavigationAssignmentPayload>(setting.Value, JsonOptions);
+            return assignment?.MenuItemKeys?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? SelectLocalizedValue(LocalizedTextPayload? localized, string culture)
+    {
+        if (localized is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(culture, "ur", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(localized.Ur))
+        {
+            return localized.Ur.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(localized.En) ? null : localized.En.Trim();
     }
 
     private static int Count(IEnumerable<AppointmentStatusCount> counts, AppointmentStatus status)
@@ -360,4 +581,24 @@ public sealed class AdminOperationsService(HealthCareDbContext dbContext) : IAdm
     }
 
     private sealed record AppointmentStatusCount(AppointmentStatus Status, int Count);
+
+    private sealed record NavigationConfigPayload(IReadOnlyList<NavigationGroupPayload> Groups);
+
+    private sealed record NavigationGroupPayload(
+        string Key,
+        int SortOrder,
+        LocalizedTextPayload Labels,
+        IReadOnlyList<NavigationItemPayload> Items);
+
+    private sealed record NavigationItemPayload(
+        string Key,
+        LocalizedTextPayload Label,
+        string Icon,
+        string Route,
+        int SortOrder,
+        IReadOnlyList<string>? RequiredPermissions);
+
+    private sealed record LocalizedTextPayload(string? En, string? Ur);
+
+    private sealed record UserNavigationAssignmentPayload(IReadOnlyList<string> MenuItemKeys);
 }

@@ -33,3 +33,8 @@ public sealed record PermissionGrantResponse(
     Guid TargetId,
     IReadOnlyList<string> GrantedPermissions,
     IReadOnlyList<string> DeniedPermissions);
+
+public sealed record UserMenuAssignmentResponse(
+    Guid UserId,
+    IReadOnlyList<string> MenuItemKeys,
+    DateTimeOffset UpdatedAt);
