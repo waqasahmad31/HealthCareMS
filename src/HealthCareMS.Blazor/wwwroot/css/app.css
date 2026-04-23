@@ -664,6 +664,11 @@ a, .btn-link {
     border-color: #fed7aa;
 }
 
+.drug-option.selected {
+    background: #ecfdf5;
+    border-color: #86efac;
+}
+
 .drug-option span {
     color: #64748b;
     font-size: 0.82rem;
@@ -886,6 +891,24 @@ a, .btn-link {
 
 .vitals-video-row {
     grid-template-columns: minmax(4rem, 0.4fr) minmax(5rem, 0.45fr) minmax(5rem, 0.45fr);
+}
+
+.lab-order-row {
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, 0.55fr) auto;
+}
+
+.summary-lab-row {
+    grid-template-columns: minmax(10rem, 0.55fr) minmax(0, 1fr) minmax(8rem, 0.35fr) auto;
+}
+
+.pharmacy-filter {
+    align-items: end;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-bottom: 1rem;
+}
+
+.pharmacy-row {
+    grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.45fr) minmax(5rem, 0.25fr) auto;
 }
 
 .notification-filter {
@@ -1159,6 +1182,10 @@ code {
     .medicine-form,
     .vitals-form-grid,
     .trend-grid,
+    .lab-order-row,
+    .summary-lab-row,
+    .pharmacy-filter,
+    .pharmacy-row,
     .notification-filter,
     .notification-item,
     .preferences-grid,

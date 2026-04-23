@@ -1,0 +1,244 @@
+@page "/pharmacy"
+@using System.Net.Http.Headers
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Pharmacy Catalogue</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Pharmacy Admin</p>
+        <h1>Medicine Catalogue</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Refresh</button>
+        <button class="primary-button" type="button" @onclick="CreateMedicineAsync" disabled="@IsBusy">Add Medicine</button>
+    </div>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Catalogue</h2>
+            <span class="status-pill blue">@Medicines.Count</span>
+        </div>
+        <div class="entity-form pharmacy-filter">
+            <label>
+                Search
+                <InputText @bind-Value="Search" />
+            </label>
+            <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Search</button>
+        </div>
+        <div class="table-shell">
+            <div class="table-row table-head pharmacy-row">
+                <span>Medicine</span>
+                <span>DRAP</span>
+                <span>Stock</span>
+                <span></span>
+            </div>
+            @foreach (var medicine in Medicines)
+            {
+                <div class="table-row pharmacy-row">
+                    <span>@medicine.BrandName (@medicine.GenericName)</span>
+                    <span>@medicine.DrapRegistrationNumber</span>
+                    <span>@medicine.StockOnHand</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SelectMedicine(medicine)">Select</button>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Add Medicine</h2>
+            <span class="status-pill green">CRUD</span>
+        </div>
+        <EditForm Model="MedicineForm" class="entity-form">
+            <label>BrandName<InputText @bind-Value="MedicineForm.BrandName" /></label>
+            <label>GenericName<InputText @bind-Value="MedicineForm.GenericName" /></label>
+            <label>DosageForm<InputText @bind-Value="MedicineForm.DosageForm" /></label>
+            <label>Strength<InputText @bind-Value="MedicineForm.Strength" /></label>
+            <label>DRAP Registration<InputText @bind-Value="MedicineForm.DrapRegistrationNumber" /></label>
+            <label>Manufacturer<InputText @bind-Value="MedicineForm.Manufacturer" /></label>
+            <label>UnitPrice<InputNumber @bind-Value="MedicineForm.UnitPrice" /></label>
+            <label>UnitCostPrice<InputNumber @bind-Value="MedicineForm.UnitCostPrice" /></label>
+            <label>ReorderLevel<InputNumber @bind-Value="MedicineForm.ReorderLevel" /></label>
+            <label>Barcode<InputText @bind-Value="MedicineForm.Barcode" /></label>
+            <label class="checkbox-label">
+                <InputCheckbox @bind-Value="MedicineForm.IsControlled" />
+                Controlled
+            </label>
+        </EditForm>
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Stock Batch</h2>
+            <span class="status-pill amber">@SelectedMedicine?.BrandName</span>
+        </div>
+        <EditForm Model="BatchForm" class="entity-form">
+            <label>BatchNumber<InputText @bind-Value="BatchForm.BatchNumber" /></label>
+            <label>ManufacturedDate<input type="date" value="@ManufacturedDateText" @onchange="OnManufacturedDateChanged" /></label>
+            <label>ExpiryDate<input type="date" value="@ExpiryDateText" @onchange="OnExpiryDateChanged" /></label>
+            <label>QuantityOnHand<InputNumber @bind-Value="BatchForm.QuantityOnHand" /></label>
+            <label>UnitCostPrice<InputNumber @bind-Value="BatchForm.UnitCostPrice" /></label>
+            <button class="primary-button" type="button" @onclick="AddBatchAsync" disabled="@IsBusy">Add Batch</button>
+        </EditForm>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Bulk CSV Import</h2>
+            <span class="status-pill blue">CSV</span>
+        </div>
+        <div class="entity-form">
+            <InputFile OnChange="ImportCsvAsync" />
+            <p class="tone-muted">Columns: GenericName, BrandName, DosageForm, Strength, DrapRegistrationNumber, Manufacturer, UnitPrice, UnitCostPrice, IsControlled, ReorderLevel, Barcode</p>
+        </div>
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private IReadOnlyList<MedicineModel> Medicines { get; set; } = [];
+
+    private MedicineModel? SelectedMedicine { get; set; }
+
+    private MedicineFormModel MedicineForm { get; set; } = new();
+
+    private StockBatchFormModel BatchForm { get; set; } = new();
+
+    private string Search { get; set; } = string.Empty;
+
+    private string ManufacturedDateText { get; set; } = string.Empty;
+
+    private string ExpiryDateText { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddMonths(12)).ToString("yyyy-MM-dd");
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMedicinesAsync();
+    }
+
+    private async Task LoadMedicinesAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<MedicineModel>>($"api/v1/pharmacy/medicines?search={Uri.EscapeDataString(Search)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Medicines = result.Data;
+            SetStatus("Medicines loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Medicine catalogue unavailable.", "tone-amber");
+    }
+
+    private async Task CreateMedicineAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<MedicineFormModel, MedicineModel>("api/v1/pharmacy/medicines", MedicineForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            MedicineForm = new MedicineFormModel();
+            await LoadMedicinesAsync();
+            SetStatus("Medicine added.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Medicine add failed.", "tone-amber");
+    }
+
+    private async Task AddBatchAsync()
+    {
+        if (SelectedMedicine is null)
+        {
+            SetStatus("Select a medicine first.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<StockBatchFormModel, StockBatchModel>(
+            $"api/v1/pharmacy/medicines/{SelectedMedicine.Id}/stock-batches",
+            BatchForm);
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            BatchForm = new StockBatchFormModel();
+            ExpiryDateText = BatchForm.ExpiryDate.ToString("yyyy-MM-dd");
+            await LoadMedicinesAsync();
+            SetStatus("Stock batch added.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Stock batch add failed.", "tone-amber");
+    }
+
+    private async Task ImportCsvAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        await using var stream = file.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+        using var content = new MultipartFormDataContent();
+        using var streamContent = new StreamContent(stream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+        content.Add(streamContent, "file", file.Name);
+
+        IsBusy = true;
+        var result = await ApiClient.PostMultipartAsync<MedicineImportModel>("api/v1/pharmacy/medicines/import", content);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            await LoadMedicinesAsync();
+            SetStatus($"{result.Data.ImportedCount} medicines imported.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "CSV import failed.", "tone-amber");
+    }
+
+    private void SelectMedicine(MedicineModel medicine)
+    {
+        SelectedMedicine = medicine;
+        BatchForm.UnitCostPrice = medicine.UnitCostPrice;
+        SetStatus($"{medicine.BrandName} selected.", "tone-blue");
+    }
+
+    private void OnManufacturedDateChanged(ChangeEventArgs args)
+    {
+        ManufacturedDateText = args.Value?.ToString() ?? string.Empty;
+        BatchForm.ManufacturedDate = DateOnly.TryParse(ManufacturedDateText, out var parsed) ? parsed : null;
+    }
+
+    private void OnExpiryDateChanged(ChangeEventArgs args)
+    {
+        ExpiryDateText = args.Value?.ToString() ?? string.Empty;
+        if (DateOnly.TryParse(ExpiryDateText, out var parsed))
+        {
+            BatchForm.ExpiryDate = parsed;
+        }
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

@@ -26,4 +26,8 @@ public interface IConsultationService
         CancellationToken cancellationToken);
 
     Task<Result<PrescriptionPdfResponse>> GeneratePrescriptionPdfAsync(Guid prescriptionId, CancellationToken cancellationToken);
+
+    Task<Result<ConsultationSummaryResponse>> GetSummaryAsync(Guid appointmentId, CancellationToken cancellationToken);
+
+    Task<Result<ConsultationSummaryPdfResponse>> GenerateSummaryPdfAsync(Guid appointmentId, CancellationToken cancellationToken);
 }

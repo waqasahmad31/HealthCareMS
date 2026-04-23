@@ -1,6 +1,7 @@
 using HealthCareMS.API.Security;
 using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Application.Consultations;
+using HealthCareMS.Application.Labs;
 using HealthCareMS.Domain.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,7 @@ public sealed class ConsultationsController(
     IConsultationService consultationService,
     IConsultationSessionService consultationSessionService,
     IConsultationChatService consultationChatService,
+    ILabService labService,
     ICurrentUser currentUser) : ApiControllerBase
 {
     [HttpPost("sessions")]
@@ -161,6 +163,38 @@ public sealed class ConsultationsController(
     {
         var result = await consultationService.GetPrescriptionByAppointmentAsync(appointmentId, cancellationToken);
         return FromResult(result);
+    }
+
+    [HttpPost("appointments/{appointmentId:guid}/lab-orders")]
+    [RequirePermission(PermissionKeys.Lab.BookingCreate)]
+    public async Task<IActionResult> CreateLabOrder(
+        Guid appointmentId,
+        CreateConsultationLabOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.CreateConsultationLabOrderAsync(appointmentId, request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpGet("appointments/{appointmentId:guid}/summary")]
+    [RequirePermission(PermissionKeys.Appointment.View)]
+    public async Task<IActionResult> GetSummary(Guid appointmentId, CancellationToken cancellationToken)
+    {
+        var result = await consultationService.GetSummaryAsync(appointmentId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("appointments/{appointmentId:guid}/summary/pdf")]
+    [RequirePermission(PermissionKeys.Appointment.View)]
+    public async Task<IActionResult> DownloadSummaryPdf(Guid appointmentId, CancellationToken cancellationToken)
+    {
+        var result = await consultationService.GenerateSummaryPdfAsync(appointmentId, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
     }
 
     [AllowAnonymous]

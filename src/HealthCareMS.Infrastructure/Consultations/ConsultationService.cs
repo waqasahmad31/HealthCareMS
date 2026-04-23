@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using HealthCareMS.Application.Consultations;
+using HealthCareMS.Application.Labs;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Consultations;
+using HealthCareMS.Domain.Labs;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +15,8 @@ namespace HealthCareMS.Infrastructure.Consultations;
 public sealed class ConsultationService(
     HealthCareDbContext dbContext,
     IPrescriptionDocumentService? prescriptionDocumentService = null,
-    IOptions<PrescriptionDocumentOptions>? prescriptionDocumentOptions = null) : IConsultationService
+    IOptions<PrescriptionDocumentOptions>? prescriptionDocumentOptions = null,
+    IConsultationSummaryDocumentService? consultationSummaryDocumentService = null) : IConsultationService
 {
     private readonly PrescriptionDocumentOptions documentOptions = prescriptionDocumentOptions?.Value ?? new PrescriptionDocumentOptions();
 
@@ -289,6 +292,54 @@ public sealed class ConsultationService(
             "application/pdf"));
     }
 
+    public async Task<Result<ConsultationSummaryResponse>> GetSummaryAsync(
+        Guid appointmentId,
+        CancellationToken cancellationToken)
+    {
+        var appointment = await dbContext.Appointments
+            .Include(x => x.Patient)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Doctor)
+            .ThenInclude(x => x.User)
+            .SingleOrDefaultAsync(x => x.Id == appointmentId, cancellationToken);
+
+        if (appointment is null)
+        {
+            return Result<ConsultationSummaryResponse>.Failure(new Error("CONSULTATION_APPOINTMENT_NOT_FOUND", "Appointment was not found."));
+        }
+
+        var prescription = await PrescriptionQuery()
+            .SingleOrDefaultAsync(x => x.AppointmentId == appointmentId, cancellationToken);
+        var labOrders = await LabBookingQuery()
+            .Where(x => x.AppointmentId == appointmentId)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return Result<ConsultationSummaryResponse>.Success(MapSummary(appointment, prescription, labOrders));
+    }
+
+    public async Task<Result<ConsultationSummaryPdfResponse>> GenerateSummaryPdfAsync(
+        Guid appointmentId,
+        CancellationToken cancellationToken)
+    {
+        if (consultationSummaryDocumentService is null)
+        {
+            return Result<ConsultationSummaryPdfResponse>.Failure(new Error("CONSULTATION_SUMMARY_PDF_UNAVAILABLE", "Consultation summary PDF service is unavailable."));
+        }
+
+        var summary = await GetSummaryAsync(appointmentId, cancellationToken);
+        if (summary.IsFailure)
+        {
+            return Result<ConsultationSummaryPdfResponse>.Failure(summary.Error);
+        }
+
+        var pdf = consultationSummaryDocumentService.GenerateSummaryPdf(summary.Value);
+        return Result<ConsultationSummaryPdfResponse>.Success(new ConsultationSummaryPdfResponse(
+            pdf,
+            $"{summary.Value.AppointmentNumber}-Summary.pdf",
+            "application/pdf"));
+    }
+
     private IQueryable<Prescription> PrescriptionQuery()
     {
         return dbContext.Prescriptions
@@ -297,6 +348,15 @@ public sealed class ConsultationService(
             .Include(x => x.Doctor)
             .ThenInclude(x => x.User)
             .Include(x => x.Items);
+    }
+
+    private IQueryable<LabSampleBooking> LabBookingQuery()
+    {
+        return dbContext.LabSampleBookings
+            .Include(x => x.Patient)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Items)
+            .ThenInclude(x => x.LabTest);
     }
 
     private async Task EnsureDefaultDrapMedicinesAsync(CancellationToken cancellationToken)
@@ -424,6 +484,65 @@ public sealed class ConsultationService(
                 .OrderBy(x => x.SortOrder)
                 .Select(MapItem)
                 .ToList());
+    }
+
+    private static ConsultationSummaryResponse MapSummary(
+        Appointment appointment,
+        Prescription? prescription,
+        IReadOnlyList<LabSampleBooking> labOrders)
+    {
+        return new ConsultationSummaryResponse(
+            appointment.Id,
+            appointment.AppointmentNumber,
+            appointment.PatientId,
+            $"{appointment.Patient.FirstName} {appointment.Patient.LastName}".Trim(),
+            appointment.DoctorId,
+            appointment.Doctor.User.FullName,
+            appointment.Status.ToString(),
+            appointment.Diagnosis,
+            appointment.Icd10Code,
+            appointment.Icd10Title,
+            appointment.ClinicalNotes,
+            appointment.FollowUpDate,
+            prescription is null ? null : MapPrescription(prescription),
+            labOrders.Select(MapLabBooking).ToList());
+    }
+
+    private static LabBookingResponse MapLabBooking(LabSampleBooking booking)
+    {
+        return new LabBookingResponse(
+            booking.Id,
+            booking.BookingNumber,
+            booking.TenantId,
+            booking.PatientId,
+            $"{booking.Patient.FirstName} {booking.Patient.LastName}".Trim(),
+            booking.AppointmentId,
+            booking.PrescriptionId,
+            booking.CollectionType.ToString(),
+            booking.Status.ToString(),
+            booking.CollectionScheduledAt,
+            booking.CollectionAddress,
+            booking.SampleBarcode,
+            booking.Notes,
+            booking.SubTotal,
+            booking.HomeCollectionFee,
+            booking.TotalAmount,
+            booking.CreatedAt,
+            booking.Items
+                .OrderBy(x => x.LabTest.TestName)
+                .Select(MapLabBookingItem)
+                .ToList());
+    }
+
+    private static LabBookingItemResponse MapLabBookingItem(LabBookingItem item)
+    {
+        return new LabBookingItemResponse(
+            item.Id,
+            item.LabTestId,
+            item.LabTest.TestCode,
+            item.LabTest.TestName,
+            item.LabTest.Category,
+            item.Price);
     }
 
     private static DrapMedicineResponse MapMedicine(DrapMedicine medicine)

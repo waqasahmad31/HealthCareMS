@@ -3,6 +3,7 @@
 @using HealthCareMS.Blazor.Services
 @inject HealthCareApiClient ApiClient
 @inject IJSRuntime JsRuntime
+@inject NavigationManager Navigation
 
 <PageTitle>Complete Consultation</PageTitle>
 
@@ -173,6 +174,70 @@
             </div>
         </div>
     </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Lab Orders</h2>
+            <div class="header-actions">
+                <button class="secondary-button" type="button" @onclick="SearchLabTestsAsync" disabled="@IsBusy">Search</button>
+                <button class="primary-button" type="button" @onclick="CreateLabOrderAsync" disabled="@IsBusy">Order</button>
+            </div>
+        </div>
+        <div class="prescription-builder">
+            <div class="medicine-search">
+                <label>
+                    Lab Test Search
+                    <input value="@LabSearch" @oninput="OnLabSearchChanged" />
+                </label>
+                <select @bind="LabOrderCollectionType">
+                    <option>OnSite</option>
+                    <option>Home</option>
+                </select>
+            </div>
+            <div class="entity-form">
+                <label>
+                    CollectionAddress
+                    <InputText @bind-Value="LabCollectionAddress" />
+                </label>
+            </div>
+            <div class="drug-results">
+                @foreach (var test in LabTestResults)
+                {
+                    <button class="@LabTestOptionClass(test)" type="button" @onclick="() => ToggleLabTest(test)">
+                        <strong>@test.TestCode</strong>
+                        <span>@test.TestName</span>
+                        <code>PKR @test.Price.ToString("0.##")</code>
+                    </button>
+                }
+            </div>
+            @if (SelectedLabTests.Count > 0)
+            {
+                <div class="table-shell">
+                    @foreach (var test in SelectedLabTests)
+                    {
+                        <div class="table-row lab-order-row">
+                            <span>@test.TestName</span>
+                            <span>@test.Category</span>
+                            <button class="secondary-button small-button" type="button" @onclick="() => ToggleLabTest(test)">Remove</button>
+                        </div>
+                    }
+                </div>
+            }
+            @if (LabOrders.Count > 0)
+            {
+                <div class="table-shell">
+                    @foreach (var order in LabOrders)
+                    {
+                        <div class="table-row lab-order-row">
+                            <span>@order.BookingNumber</span>
+                            <span>@order.Items.Count tests / PKR @order.TotalAmount.ToString("0.##")</span>
+                            <span class="status-pill green">@order.Status</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </article>
 </section>
 
 @if (Result is not null)
@@ -183,6 +248,7 @@
             <div class="header-actions">
                 <span class="status-pill green">@Result.Status</span>
                 <button class="secondary-button" type="button" @onclick="DownloadPrescriptionPdfAsync" disabled="@IsBusy">PDF</button>
+                <button class="secondary-button" type="button" @onclick="OpenSummary">Summary</button>
             </div>
         </div>
         <div class="permission-grid">
@@ -228,11 +294,23 @@
 
     private IReadOnlyList<DrugAllergyWarningModel> AllergyWarnings { get; set; } = [];
 
+    private IReadOnlyList<LabTestModel> LabTestResults { get; set; } = [];
+
+    private List<LabTestModel> SelectedLabTests { get; } = [];
+
+    private IReadOnlyList<LabBookingModel> LabOrders { get; set; } = [];
+
     private CompleteConsultationResultModel? Result { get; set; }
 
     private string Icd10Search { get; set; } = string.Empty;
 
     private string MedicineSearch { get; set; } = string.Empty;
+
+    private string LabSearch { get; set; } = string.Empty;
+
+    private string LabOrderCollectionType { get; set; } = "OnSite";
+
+    private string? LabCollectionAddress { get; set; }
 
     private string FollowUpDateText { get; set; } = string.Empty;
 
@@ -246,6 +324,7 @@
     {
         await SearchIcd10Async();
         await SearchDrapMedicinesAsync();
+        await SearchLabTestsAsync();
     }
 
     private async Task SearchIcd10Async()
@@ -279,12 +358,36 @@
         SetStatus(result?.Error?.Message ?? "DRAP drug lookup unavailable.", "tone-amber");
     }
 
+    private async Task SearchLabTestsAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<LabTestModel>>($"api/v1/lab/tests?search={Uri.EscapeDataString(LabSearch)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            LabTestResults = result.Data;
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Lab test lookup unavailable.", "tone-amber");
+    }
+
     private async Task OnMedicineSearchChanged(ChangeEventArgs args)
     {
         MedicineSearch = args.Value?.ToString() ?? string.Empty;
         if (MedicineSearch.Length == 0 || MedicineSearch.Length >= 2)
         {
             await SearchDrapMedicinesAsync();
+        }
+    }
+
+    private async Task OnLabSearchChanged(ChangeEventArgs args)
+    {
+        LabSearch = args.Value?.ToString() ?? string.Empty;
+        if (LabSearch.Length == 0 || LabSearch.Length >= 2)
+        {
+            await SearchLabTestsAsync();
         }
     }
 
@@ -429,11 +532,48 @@
         if (result?.Success == true && result.Data is not null)
         {
             Result = result.Data;
+            Form.PatientIdText = result.Data.Prescription?.PatientId.ToString() ?? Form.PatientIdText;
             SetStatus("Consultation completed.", "tone-green");
             return;
         }
 
         SetStatus(result?.Error?.Message ?? "Consultation completion failed.", "tone-amber");
+    }
+
+    private async Task CreateLabOrderAsync()
+    {
+        if (!Guid.TryParse(Form.AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("AppointmentId is required for lab order.", "tone-amber");
+            return;
+        }
+
+        if (SelectedLabTests.Count == 0)
+        {
+            SetStatus("Select at least one lab test.", "tone-amber");
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<CreateConsultationLabOrderModel, LabBookingModel>(
+            $"api/v1/consultations/appointments/{appointmentId}/lab-orders",
+            new CreateConsultationLabOrderModel(
+                SelectedLabTests.Select(x => x.Id).ToList(),
+                LabOrderCollectionType,
+                null,
+                string.IsNullOrWhiteSpace(LabCollectionAddress) ? null : LabCollectionAddress,
+                "Ordered from consultation"));
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            LabOrders = LabOrders.Concat([result.Data]).ToList();
+            SelectedLabTests.Clear();
+            SetStatus("Lab booking created.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Lab order failed.", "tone-amber");
     }
 
     private async Task DownloadPrescriptionPdfAsync()
@@ -468,9 +608,38 @@
         FollowUpDateText = args.Value?.ToString() ?? string.Empty;
     }
 
+    private void ToggleLabTest(LabTestModel test)
+    {
+        var selected = SelectedLabTests.FirstOrDefault(x => x.Id == test.Id);
+        if (selected is null)
+        {
+            SelectedLabTests.Add(test);
+        }
+        else
+        {
+            SelectedLabTests.Remove(selected);
+        }
+    }
+
     private string MedicineOptionClass(DrapMedicineModel medicine)
     {
         return medicine.IsBanned ? "drug-option banned" : "drug-option";
+    }
+
+    private string LabTestOptionClass(LabTestModel test)
+    {
+        return SelectedLabTests.Any(x => x.Id == test.Id) ? "drug-option selected" : "drug-option";
+    }
+
+    private void OpenSummary()
+    {
+        if (!Guid.TryParse(Form.AppointmentIdText, out var appointmentId))
+        {
+            SetStatus("AppointmentId is required for summary.", "tone-amber");
+            return;
+        }
+
+        Navigation.NavigateTo($"/consultation/summary/{appointmentId}");
     }
 
     private static string ShortSignature(string? signature)

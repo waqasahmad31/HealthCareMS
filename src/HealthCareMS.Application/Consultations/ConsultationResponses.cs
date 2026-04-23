@@ -1,3 +1,5 @@
+using HealthCareMS.Application.Labs;
+
 namespace HealthCareMS.Application.Consultations;
 
 public sealed record Icd10CodeResponse(
@@ -62,6 +64,27 @@ public sealed record PrescriptionVerificationResponse(
     bool IsValid);
 
 public sealed record PrescriptionPdfResponse(
+    byte[] Content,
+    string FileName,
+    string ContentType);
+
+public sealed record ConsultationSummaryResponse(
+    Guid AppointmentId,
+    string AppointmentNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid DoctorId,
+    string DoctorName,
+    string Status,
+    string? Diagnosis,
+    string? Icd10Code,
+    string? Icd10Title,
+    string? ClinicalNotes,
+    DateOnly? FollowUpDate,
+    PrescriptionResponse? Prescription,
+    IReadOnlyList<LabBookingResponse> LabOrders);
+
+public sealed record ConsultationSummaryPdfResponse(
     byte[] Content,
     string FileName,
     string ContentType);

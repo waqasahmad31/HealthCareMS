@@ -5,8 +5,10 @@ using HealthCareMS.Domain.Common;
 using HealthCareMS.Domain.Consultations;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
+using HealthCareMS.Domain.Labs;
 using HealthCareMS.Domain.Notifications;
 using HealthCareMS.Domain.Patients;
+using HealthCareMS.Domain.Pharmacy;
 using Microsoft.EntityFrameworkCore;
 
 namespace HealthCareMS.Infrastructure.Persistence;
@@ -60,6 +62,18 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
     public DbSet<Notification> Notifications => Set<Notification>();
 
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+
+    public DbSet<LabTest> LabTests => Set<LabTest>();
+
+    public DbSet<LabSampleBooking> LabSampleBookings => Set<LabSampleBooking>();
+
+    public DbSet<LabBookingItem> LabBookingItems => Set<LabBookingItem>();
+
+    public DbSet<Medicine> Medicines => Set<Medicine>();
+
+    public DbSet<StockBatch> StockBatches => Set<StockBatch>();
+
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
