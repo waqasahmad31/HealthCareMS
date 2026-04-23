@@ -717,6 +717,274 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             "application/pdf"));
     }
 
+    public async Task<Result<PharmacyOrderResponse>> CreateOrderAsync(
+        CreatePharmacyOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationErrors = ValidateCreateOrder(request);
+        if (validationErrors.Count > 0)
+        {
+            return Result<PharmacyOrderResponse>.Failure(Error.Validation(validationErrors));
+        }
+
+        var patient = await dbContext.Patients
+            .Include(x => x.User)
+            .SingleOrDefaultAsync(x => x.Id == request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_PATIENT_NOT_FOUND", "Patient was not found."));
+        }
+
+        Prescription? prescription = null;
+        if (request.PrescriptionId.HasValue)
+        {
+            prescription = await dbContext.Prescriptions
+                .SingleOrDefaultAsync(x => x.Id == request.PrescriptionId.Value, cancellationToken);
+            if (prescription is null || prescription.PatientId != request.PatientId)
+            {
+                return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_PRESCRIPTION_INVALID", "Prescription was not found for this patient."));
+            }
+        }
+
+        var itemIds = request.Items.Select(x => x.MedicineId).Distinct().ToArray();
+        var medicines = await dbContext.Medicines
+            .Include(x => x.StockBatches)
+            .Where(x => itemIds.Contains(x.Id) && x.IsActive)
+            .ToListAsync(cancellationToken);
+        if (medicines.Count != itemIds.Length)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_MEDICINE_NOT_FOUND", "One or more medicines were not found."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var order = new PharmacyOrder
+        {
+            TenantId = request.TenantId,
+            OrderNumber = await GenerateOrderNumberAsync(now, cancellationToken),
+            PatientId = patient.Id,
+            Patient = patient,
+            PrescriptionId = prescription?.Id,
+            Prescription = prescription,
+            Status = PharmacyOrderStatus.Placed,
+            OrderedAt = now,
+            DeliveryAddress = request.DeliveryAddress.Trim(),
+            DeliveryWindowStart = request.DeliveryWindowStart?.ToUniversalTime(),
+            DeliveryWindowEnd = request.DeliveryWindowEnd?.ToUniversalTime(),
+            PrescriptionUploadFileName = Normalize(request.PrescriptionUploadFileName),
+            PrescriptionUploadContentType = Normalize(request.PrescriptionUploadContentType),
+            PrescriptionUploadContent = request.PrescriptionUploadContent,
+            PatientNotes = Normalize(request.PatientNotes),
+            DeliveryFee = 250m
+        };
+
+        foreach (var item in request.Items)
+        {
+            var medicine = medicines.Single(x => x.Id == item.MedicineId);
+            var lineTotal = item.Quantity * medicine.UnitPrice;
+            order.Items.Add(new PharmacyOrderItem
+            {
+                MedicineId = medicine.Id,
+                Medicine = medicine,
+                MedicineName = medicine.BrandName,
+                Quantity = item.Quantity,
+                UnitPrice = medicine.UnitPrice,
+                LineTotal = lineTotal
+            });
+            order.SubTotal += lineTotal;
+        }
+
+        order.TotalAmount = order.SubTotal + order.DeliveryFee;
+        dbContext.PharmacyOrders.Add(order);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var saved = await OrderQuery().SingleAsync(x => x.Id == order.Id, cancellationToken);
+        return Result<PharmacyOrderResponse>.Success(Map(saved));
+    }
+
+    public async Task<Result<PharmacyOrderResponse>> GetOrderAsync(
+        Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        var order = await OrderQuery().AsNoTracking().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
+        return order is null
+            ? Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_NOT_FOUND", "Pharmacy order was not found."))
+            : Result<PharmacyOrderResponse>.Success(Map(order));
+    }
+
+    public async Task<Result<IReadOnlyList<PharmacyOrderResponse>>> GetOrdersAsync(
+        string? status,
+        Guid? patientId,
+        Guid? deliveryAgentUserId,
+        CancellationToken cancellationToken)
+    {
+        var query = OrderQuery().AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<PharmacyOrderStatus>(status, ignoreCase: true, out var parsedStatus))
+            {
+                return Result<IReadOnlyList<PharmacyOrderResponse>>.Failure(new Error("PHARMACY_ORDER_STATUS_INVALID", "Status is invalid."));
+            }
+
+            query = query.Where(x => x.Status == parsedStatus);
+        }
+
+        if (patientId.HasValue)
+        {
+            query = query.Where(x => x.PatientId == patientId.Value);
+        }
+
+        if (deliveryAgentUserId.HasValue)
+        {
+            query = query.Where(x => x.DeliveryAgentUserId == deliveryAgentUserId.Value);
+        }
+
+        var orders = await query
+            .OrderByDescending(x => x.OrderedAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<PharmacyOrderResponse>>.Success(orders.Select(Map).ToList());
+    }
+
+    public async Task<Result<PharmacyOrderResponse>> ConfirmOrderAsync(
+        Guid orderId,
+        ConfirmPharmacyOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var order = await OrderQuery().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
+        if (order is null)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_NOT_FOUND", "Pharmacy order was not found."));
+        }
+
+        if (order.Status != PharmacyOrderStatus.Placed)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_STATUS_INVALID", "Only placed orders can be confirmed."));
+        }
+
+        if (request.DeliveryAgentUserId.HasValue)
+        {
+            var agentExists = await dbContext.Users.AnyAsync(x => x.Id == request.DeliveryAgentUserId.Value && x.IsActive, cancellationToken);
+            if (!agentExists)
+            {
+                return Result<PharmacyOrderResponse>.Failure(new Error("DELIVERY_AGENT_NOT_FOUND", "Delivery agent was not found."));
+            }
+        }
+
+        var adjustments = new List<StockAdjustment>();
+        foreach (var orderItem in order.Items)
+        {
+            var medicine = await MedicineQuery().SingleAsync(x => x.Id == orderItem.MedicineId, cancellationToken);
+            var selection = BuildFifoSelection(medicine, orderItem.Quantity);
+            if (!selection.IsFulfillable)
+            {
+                return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_STOCK_INSUFFICIENT", $"{medicine.BrandName} does not have enough stock."));
+            }
+
+            foreach (var selectedBatch in selection.Batches)
+            {
+                var batch = medicine.StockBatches.Single(x => x.Id == selectedBatch.StockBatchId);
+                var adjustment = ApplyAdjustment(
+                    batch,
+                    -selectedBatch.QuantitySelected,
+                    StockAdjustmentType.Dispense,
+                    $"Online order {order.OrderNumber} confirmed");
+                if (adjustment.IsFailure)
+                {
+                    return Result<PharmacyOrderResponse>.Failure(adjustment.Error);
+                }
+
+                adjustments.Add(adjustment.Value);
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        order.ReviewedAt = now;
+        order.ConfirmedAt = now;
+        order.PharmacistNotes = Normalize(request.PharmacistNotes);
+        order.Status = request.DeliveryAgentUserId.HasValue
+            ? PharmacyOrderStatus.AssignedForDelivery
+            : PharmacyOrderStatus.Confirmed;
+        order.DeliveryAgentUserId = request.DeliveryAgentUserId;
+        order.AssignedAt = request.DeliveryAgentUserId.HasValue ? now : null;
+        dbContext.StockAdjustments.AddRange(adjustments);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var saved = await OrderQuery().SingleAsync(x => x.Id == order.Id, cancellationToken);
+        return Result<PharmacyOrderResponse>.Success(Map(saved));
+    }
+
+    public async Task<Result<PharmacyOrderResponse>> AssignDeliveryAgentAsync(
+        Guid orderId,
+        AssignDeliveryAgentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var order = await OrderQuery().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
+        if (order is null)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_NOT_FOUND", "Pharmacy order was not found."));
+        }
+
+        var agent = await dbContext.Users.SingleOrDefaultAsync(x => x.Id == request.DeliveryAgentUserId && x.IsActive, cancellationToken);
+        if (agent is null)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("DELIVERY_AGENT_NOT_FOUND", "Delivery agent was not found."));
+        }
+
+        if (order.Status is PharmacyOrderStatus.Placed or PharmacyOrderStatus.Cancelled or PharmacyOrderStatus.Rejected or PharmacyOrderStatus.Delivered)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_STATUS_INVALID", "Order cannot be assigned in its current status."));
+        }
+
+        order.DeliveryAgentUserId = agent.Id;
+        order.DeliveryAgentUser = agent;
+        order.AssignedAt = DateTimeOffset.UtcNow;
+        order.Status = PharmacyOrderStatus.AssignedForDelivery;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var saved = await OrderQuery().SingleAsync(x => x.Id == order.Id, cancellationToken);
+        return Result<PharmacyOrderResponse>.Success(Map(saved));
+    }
+
+    public async Task<Result<PharmacyOrderResponse>> UpdateOrderStatusAsync(
+        Guid orderId,
+        UpdatePharmacyOrderStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<PharmacyOrderStatus>(request.Status, ignoreCase: true, out var newStatus))
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_STATUS_INVALID", "Status is invalid."));
+        }
+
+        var order = await OrderQuery().SingleOrDefaultAsync(x => x.Id == orderId, cancellationToken);
+        if (order is null)
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_NOT_FOUND", "Pharmacy order was not found."));
+        }
+
+        if (!CanMoveOrderTo(order.Status, newStatus))
+        {
+            return Result<PharmacyOrderResponse>.Failure(new Error("PHARMACY_ORDER_STATUS_INVALID", $"Cannot move order from {order.Status} to {newStatus}."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        order.Status = newStatus;
+        order.PharmacistNotes = Normalize(request.Notes) ?? order.PharmacistNotes;
+        if (newStatus == PharmacyOrderStatus.Dispatched)
+        {
+            order.DispatchedAt = now;
+        }
+
+        if (newStatus == PharmacyOrderStatus.Delivered)
+        {
+            order.DeliveredAt = now;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        var saved = await OrderQuery().SingleAsync(x => x.Id == order.Id, cancellationToken);
+        return Result<PharmacyOrderResponse>.Success(Map(saved));
+    }
+
     private IQueryable<Medicine> MedicineQuery()
     {
         return dbContext.Medicines
@@ -757,6 +1025,17 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             .ThenInclude(x => x.StockBatch);
     }
 
+    private IQueryable<PharmacyOrder> OrderQuery()
+    {
+        return dbContext.PharmacyOrders
+            .Include(x => x.Patient)
+            .ThenInclude(x => x.User)
+            .Include(x => x.Prescription)
+            .Include(x => x.DeliveryAgentUser)
+            .Include(x => x.Items)
+            .ThenInclude(x => x.Medicine);
+    }
+
     private static List<ValidationError> ValidateMedicine(CreateMedicineRequest request)
     {
         var errors = new List<ValidationError>();
@@ -777,6 +1056,65 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         if (request.ReorderLevel < 0)
         {
             errors.Add(new ValidationError(nameof(request.ReorderLevel), "ReorderLevel cannot be negative."));
+        }
+
+        return errors;
+    }
+
+    private static List<ValidationError> ValidateCreateOrder(CreatePharmacyOrderRequest request)
+    {
+        var errors = new List<ValidationError>();
+        if (request.PatientId == Guid.Empty)
+        {
+            errors.Add(new ValidationError(nameof(request.PatientId), "PatientId is required."));
+        }
+
+        Required(request.DeliveryAddress, nameof(request.DeliveryAddress), errors);
+        if (!string.IsNullOrWhiteSpace(request.DeliveryAddress) && request.DeliveryAddress.Trim().Length > 1000)
+        {
+            errors.Add(new ValidationError(nameof(request.DeliveryAddress), "DeliveryAddress cannot exceed 1000 characters."));
+        }
+
+        if (request.DeliveryWindowStart.HasValue && request.DeliveryWindowEnd.HasValue
+            && request.DeliveryWindowEnd <= request.DeliveryWindowStart)
+        {
+            errors.Add(new ValidationError(nameof(request.DeliveryWindowEnd), "DeliveryWindowEnd must be after DeliveryWindowStart."));
+        }
+
+        if (request.Items is null || request.Items.Count == 0)
+        {
+            errors.Add(new ValidationError(nameof(request.Items), "At least one order item is required."));
+            return errors;
+        }
+
+        for (var index = 0; index < request.Items.Count; index++)
+        {
+            var item = request.Items[index];
+            var prefix = $"{nameof(request.Items)}[{index}]";
+            if (item.MedicineId == Guid.Empty)
+            {
+                errors.Add(new ValidationError($"{prefix}.{nameof(item.MedicineId)}", "MedicineId is required."));
+            }
+
+            if (item.Quantity <= 0)
+            {
+                errors.Add(new ValidationError($"{prefix}.{nameof(item.Quantity)}", "Quantity must be greater than zero."));
+            }
+        }
+
+        if (request.Items.Select(x => x.MedicineId).Distinct().Count() != request.Items.Count)
+        {
+            errors.Add(new ValidationError(nameof(request.Items), "Duplicate medicines are not allowed in the same order."));
+        }
+
+        if (!request.PrescriptionId.HasValue && (request.PrescriptionUploadContent is null || request.PrescriptionUploadContent.Length == 0))
+        {
+            errors.Add(new ValidationError(nameof(request.PrescriptionId), "PrescriptionId or prescription upload is required."));
+        }
+
+        if (request.PrescriptionUploadContent?.Length > 2 * 1024 * 1024)
+        {
+            errors.Add(new ValidationError(nameof(request.PrescriptionUploadContent), "Prescription upload cannot exceed 2 MB."));
         }
 
         return errors;
@@ -975,6 +1313,21 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             .Sum(x => x.QuantityOnHand);
     }
 
+    private static bool CanMoveOrderTo(PharmacyOrderStatus currentStatus, PharmacyOrderStatus newStatus)
+    {
+        return (currentStatus, newStatus) switch
+        {
+            (PharmacyOrderStatus.Confirmed, PharmacyOrderStatus.Prepared) => true,
+            (PharmacyOrderStatus.AssignedForDelivery, PharmacyOrderStatus.Prepared) => true,
+            (PharmacyOrderStatus.Prepared, PharmacyOrderStatus.Dispatched) => true,
+            (PharmacyOrderStatus.AssignedForDelivery, PharmacyOrderStatus.Dispatched) => true,
+            (PharmacyOrderStatus.Dispatched, PharmacyOrderStatus.Delivered) => true,
+            (_, PharmacyOrderStatus.Cancelled) when currentStatus is not PharmacyOrderStatus.Delivered => true,
+            (_, PharmacyOrderStatus.Rejected) when currentStatus == PharmacyOrderStatus.Placed => true,
+            _ => currentStatus == newStatus
+        };
+    }
+
     private static FifoBatchSelectionResponse BuildFifoSelection(Medicine medicine, int quantityRequired)
     {
         var remaining = quantityRequired;
@@ -1127,6 +1480,14 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
         var datePart = dispensedAt.UtcDateTime.ToString("yyyyMMdd");
         var prefix = $"DSP-{datePart}-";
         var count = await dbContext.PrescriptionDispenses.CountAsync(x => x.DispenseNumber.StartsWith(prefix), cancellationToken);
+        return $"{prefix}{count + 1:000000}";
+    }
+
+    private async Task<string> GenerateOrderNumberAsync(DateTimeOffset orderedAt, CancellationToken cancellationToken)
+    {
+        var datePart = orderedAt.UtcDateTime.ToString("yyyyMMdd");
+        var prefix = $"PHO-{datePart}-";
+        var count = await dbContext.PharmacyOrders.CountAsync(x => x.OrderNumber.StartsWith(prefix), cancellationToken);
         return $"{prefix}{count + 1:000000}";
     }
 
@@ -1347,6 +1708,51 @@ public sealed class PharmacyService(HealthCareDbContext dbContext) : IPharmacySe
             batch.BatchNumber,
             batch.StockBatch.ExpiryDate,
             batch.QuantityDispensed);
+    }
+
+    private static PharmacyOrderResponse Map(PharmacyOrder order)
+    {
+        return new PharmacyOrderResponse(
+            order.Id,
+            order.TenantId,
+            order.OrderNumber,
+            order.PatientId,
+            $"{order.Patient.FirstName} {order.Patient.LastName}".Trim(),
+            order.PrescriptionId,
+            order.Status.ToString(),
+            order.OrderedAt,
+            order.ReviewedAt,
+            order.ConfirmedAt,
+            order.DeliveryAgentUserId,
+            order.DeliveryAgentUser?.FullName,
+            order.AssignedAt,
+            order.DispatchedAt,
+            order.DeliveredAt,
+            order.DeliveryAddress,
+            order.DeliveryWindowStart,
+            order.DeliveryWindowEnd,
+            order.PrescriptionUploadContent is { Length: > 0 },
+            order.PrescriptionUploadFileName,
+            order.PatientNotes,
+            order.PharmacistNotes,
+            order.SubTotal,
+            order.DeliveryFee,
+            order.TotalAmount,
+            order.Items
+                .OrderBy(x => x.MedicineName)
+                .Select(Map)
+                .ToList());
+    }
+
+    private static PharmacyOrderItemResponse Map(PharmacyOrderItem item)
+    {
+        return new PharmacyOrderItemResponse(
+            item.Id,
+            item.MedicineId,
+            item.MedicineName,
+            item.Quantity,
+            item.UnitPrice,
+            item.LineTotal);
     }
 
     private static IContainer HeaderCell(IContainer container)

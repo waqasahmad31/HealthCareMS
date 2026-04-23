@@ -2,6 +2,7 @@ using HealthCareMS.API.Security;
 using HealthCareMS.Application.Pharmacy;
 using HealthCareMS.Domain.Identity;
 using HealthCareMS.Shared.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HealthCareMS.API.Controllers;
@@ -10,7 +11,7 @@ namespace HealthCareMS.API.Controllers;
 public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiControllerBase
 {
     [HttpGet("medicines")]
-    [RequirePermission(PermissionKeys.Pharmacy.MedicinesView)]
+    [AllowAnonymous]
     public async Task<IActionResult> SearchMedicines([FromQuery] string? search, CancellationToken cancellationToken)
     {
         var results = await pharmacyService.SearchMedicinesAsync(search, cancellationToken);
@@ -18,7 +19,7 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
     }
 
     [HttpGet("medicines/{medicineId:guid}")]
-    [RequirePermission(PermissionKeys.Pharmacy.MedicinesView)]
+    [AllowAnonymous]
     public async Task<IActionResult> GetMedicine(Guid medicineId, CancellationToken cancellationToken)
     {
         var result = await pharmacyService.GetMedicineAsync(medicineId, cancellationToken);
@@ -153,6 +154,67 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
         }
 
         return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
+    }
+
+    [HttpPost("orders")]
+    [Authorize]
+    public async Task<IActionResult> CreateOrder(CreatePharmacyOrderRequest request, CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.CreateOrderAsync(request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpGet("orders")]
+    [RequirePermission(PermissionKeys.Pharmacy.OrdersView)]
+    public async Task<IActionResult> GetOrders(
+        [FromQuery] string? status,
+        [FromQuery] Guid? patientId,
+        [FromQuery] Guid? deliveryAgentUserId,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetOrdersAsync(status, patientId, deliveryAgentUserId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("orders/{orderId:guid}")]
+    [Authorize]
+    public async Task<IActionResult> GetOrder(Guid orderId, CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetOrderAsync(orderId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("orders/{orderId:guid}/confirm")]
+    [RequirePermission(PermissionKeys.Pharmacy.OrdersProcess)]
+    public async Task<IActionResult> ConfirmOrder(
+        Guid orderId,
+        ConfirmPharmacyOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.ConfirmOrderAsync(orderId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("orders/{orderId:guid}/delivery-agent")]
+    [RequirePermission(PermissionKeys.Pharmacy.OrdersProcess)]
+    public async Task<IActionResult> AssignDeliveryAgent(
+        Guid orderId,
+        AssignDeliveryAgentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.AssignDeliveryAgentAsync(orderId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("orders/{orderId:guid}/status")]
+    [RequirePermission(PermissionKeys.Pharmacy.OrdersProcess)]
+    public async Task<IActionResult> UpdateOrderStatus(
+        Guid orderId,
+        UpdatePharmacyOrderStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.UpdateOrderStatusAsync(orderId, request, cancellationToken);
+        return FromResult(result);
     }
 
     [HttpPost("medicines/import")]

@@ -2,7 +2,9 @@
 @using System.Net.Http.Headers
 @using HealthCareMS.Blazor.Models
 @using HealthCareMS.Blazor.Services
+@using Microsoft.JSInterop
 @inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
 
 <PageTitle>Laboratory Catalogue</PageTitle>
 
@@ -32,6 +34,11 @@
         <span class="metric-label">Selected</span>
         <strong>@SelectedLabTestIds.Count</strong>
         <span class="tone-amber">builder</span>
+    </article>
+    <article class="metric-card">
+        <span class="metric-label">Check-In</span>
+        <strong>@CheckInBookings.Count</strong>
+        <span class="tone-blue">onsite</span>
     </article>
 </section>
 
@@ -116,6 +123,64 @@
     </article>
 </section>
 
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>OnSite Booking</h2>
+            <span class="status-pill green">@SelectedLabTestIds.Count tests</span>
+        </div>
+        <EditForm Model="BookingForm" class="entity-form">
+            <label>PatientId<InputText @bind-Value="BookingPatientIdText" /></label>
+            <label>CollectionScheduledAt<input type="datetime-local" value="@BookingScheduledAtText" @onchange="OnBookingScheduledAtChanged" /></label>
+            <label>Notes<InputTextArea @bind-Value="BookingForm.Notes" /></label>
+            <button class="primary-button" type="button" @onclick="CreateOnSiteBookingAsync" disabled="@IsBusy">Book OnSite</button>
+        </EditForm>
+        @if (LastBooking is not null)
+        {
+            <div class="dispense-summary">
+                <strong>@LastBooking.BookingNumber</strong>
+                <span>@LastBooking.TokenNumber / @LastBooking.SampleBarcode</span>
+                <span>@LastBooking.TotalAmount.ToString("0.00")</span>
+            </div>
+        }
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Reception Check-In</h2>
+            <span class="status-pill blue">@CheckInBookings.Count</span>
+        </div>
+        <div class="entity-form pharmacy-filter">
+            <label>
+                Status
+                <InputSelect @bind-Value="BookingStatusFilter">
+                    <option>Ordered</option>
+                    <option>CheckedIn</option>
+                </InputSelect>
+            </label>
+            <button class="secondary-button" type="button" @onclick="LoadCheckInBookingsAsync" disabled="@IsBusy">Load</button>
+        </div>
+        <label class="checkbox-label">
+            <InputCheckbox @bind-Value="FastingVerified" />
+            Fasting verified
+        </label>
+        <div class="table-shell">
+            @foreach (var booking in CheckInBookings)
+            {
+                <div class="table-row lab-booking-row">
+                    <span>@booking.BookingNumber<br />@booking.PatientName</span>
+                    <span>@booking.TokenNumber<br />@booking.Status</span>
+                    <span>@booking.SampleBarcode</span>
+                    <div class="header-actions">
+                        <button class="secondary-button small-button" type="button" @onclick="() => CheckInBookingAsync(booking.Id)" disabled="@IsBusy">Check In</button>
+                        <button class="secondary-button small-button" type="button" @onclick="() => DownloadLabelAsync(booking.Id)" disabled="@IsBusy">Label</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
 @if (!string.IsNullOrWhiteSpace(StatusMessage))
 {
     <p class="@StatusClass">@StatusMessage</p>
@@ -130,7 +195,21 @@
 
     private LabPanelFormModel PanelForm { get; set; } = new();
 
+    private LabBookingFormModel BookingForm { get; set; } = new();
+
+    private LabBookingModel? LastBooking { get; set; }
+
+    private IReadOnlyList<LabBookingModel> CheckInBookings { get; set; } = [];
+
     private string Search { get; set; } = string.Empty;
+
+    private string BookingPatientIdText { get; set; } = string.Empty;
+
+    private string BookingScheduledAtText { get; set; } = string.Empty;
+
+    private string BookingStatusFilter { get; set; } = "Ordered";
+
+    private bool FastingVerified { get; set; } = true;
 
     private bool IsBusy { get; set; }
 
@@ -144,6 +223,7 @@
     {
         await LoadTestsAsync();
         await LoadPanelsAsync();
+        await LoadCheckInBookingsAsync();
     }
 
     private async Task LoadTestsAsync()
@@ -217,6 +297,94 @@
         }
 
         SetStatus(result?.Error?.Message ?? "Lab panel creation failed.", "tone-amber");
+    }
+
+    private async Task CreateOnSiteBookingAsync()
+    {
+        if (!Guid.TryParse(BookingPatientIdText, out var patientId))
+        {
+            SetStatus("Enter a valid patient id.", "tone-amber");
+            return;
+        }
+
+        if (SelectedLabTestIds.Count == 0)
+        {
+            SetStatus("Select lab tests first.", "tone-amber");
+            return;
+        }
+
+        BookingForm.PatientId = patientId;
+        BookingForm.CollectionType = "OnSite";
+        BookingForm.LabTestIds = SelectedLabTestIds.ToList();
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<LabBookingFormModel, LabBookingModel>("api/v1/lab/bookings", BookingForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            LastBooking = result.Data;
+            BookingForm = new LabBookingFormModel();
+            SelectedLabTestIds.Clear();
+            await LoadCheckInBookingsAsync();
+            SetStatus("Onsite lab booking created.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Onsite lab booking failed.", "tone-amber");
+    }
+
+    private async Task LoadCheckInBookingsAsync()
+    {
+        var result = await ApiClient.GetAsync<IReadOnlyList<LabBookingModel>>(
+            $"api/v1/lab/bookings?collectionType=OnSite&status={Uri.EscapeDataString(BookingStatusFilter)}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            CheckInBookings = result.Data;
+        }
+    }
+
+    private async Task CheckInBookingAsync(Guid bookingId)
+    {
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<LabCheckInFormModel, LabBookingModel>(
+            $"api/v1/lab/bookings/{bookingId}/check-in",
+            new LabCheckInFormModel { FastingVerified = FastingVerified, Notes = "Checked in from laboratory workspace." });
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            await LoadCheckInBookingsAsync();
+            SetStatus("Lab booking checked in.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Lab check-in failed.", "tone-amber");
+    }
+
+    private async Task DownloadLabelAsync(Guid bookingId)
+    {
+        var download = await ApiClient.DownloadFileAsync($"api/v1/lab/bookings/{bookingId}/barcode-label.pdf");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Barcode label download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync(
+            "HealthCareMSMedia.downloadFile",
+            download.FileName,
+            download.ContentType,
+            Convert.ToBase64String(download.Content));
+        SetStatus("Barcode label downloaded.", "tone-green");
+    }
+
+    private void OnBookingScheduledAtChanged(ChangeEventArgs args)
+    {
+        BookingScheduledAtText = args.Value?.ToString() ?? string.Empty;
+        BookingForm.CollectionScheduledAt = DateTimeOffset.TryParse(BookingScheduledAtText, out var parsed)
+            ? parsed
+            : null;
     }
 
     private void ToggleTest(LabTestModel test)

@@ -2,6 +2,7 @@ using HealthCareMS.API.Security;
 using HealthCareMS.Application.Labs;
 using HealthCareMS.Domain.Identity;
 using HealthCareMS.Shared.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HealthCareMS.API.Controllers;
@@ -50,6 +51,50 @@ public sealed class LabController(ILabService labService) : ApiControllerBase
     {
         var result = await labService.CreatePanelAsync(request, cancellationToken);
         return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpPost("bookings")]
+    [Authorize]
+    public async Task<IActionResult> CreateBooking(CreateLabBookingRequest request, CancellationToken cancellationToken)
+    {
+        var result = await labService.CreateBookingAsync(request, cancellationToken);
+        return FromResult(result, StatusCodes.Status201Created);
+    }
+
+    [HttpGet("bookings")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> GetBookings(
+        [FromQuery] string? status,
+        [FromQuery] string? collectionType,
+        [FromQuery] DateOnly? date,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.GetBookingsAsync(status, collectionType, date, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("bookings/{bookingId:guid}/check-in")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> CheckInBooking(
+        Guid bookingId,
+        CheckInLabBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.CheckInBookingAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("bookings/{bookingId:guid}/barcode-label.pdf")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> DownloadBarcodeLabel(Guid bookingId, CancellationToken cancellationToken)
+    {
+        var result = await labService.GenerateBarcodeLabelPdfAsync(bookingId, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
     }
 
     [HttpGet("appointments/{appointmentId:guid}/bookings")]

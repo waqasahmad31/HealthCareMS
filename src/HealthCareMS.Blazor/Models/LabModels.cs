@@ -35,6 +35,10 @@ public sealed record LabBookingModel(
     DateTimeOffset? CollectionScheduledAt,
     string? CollectionAddress,
     string? SampleBarcode,
+    string? TokenNumber,
+    bool? FastingVerified,
+    DateTimeOffset? CheckedInAt,
+    DateTimeOffset? BarcodeLabelGeneratedAt,
     string? Notes,
     decimal SubTotal,
     decimal HomeCollectionFee,
@@ -81,6 +85,30 @@ public sealed record LabPanelModel(
     decimal Price,
     bool IsActive,
     IReadOnlyList<LabTestModel> Tests);
+
+public sealed class LabBookingFormModel
+{
+    public Guid? TenantId { get; set; }
+
+    public Guid PatientId { get; set; }
+
+    public IReadOnlyList<Guid> LabTestIds { get; set; } = [];
+
+    public string CollectionType { get; set; } = "OnSite";
+
+    public DateTimeOffset? CollectionScheduledAt { get; set; }
+
+    public string? CollectionAddress { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+public sealed class LabCheckInFormModel
+{
+    public bool FastingVerified { get; set; } = true;
+
+    public string? Notes { get; set; }
+}
 
 public sealed record ConsultationSummaryModel(
     Guid AppointmentId,

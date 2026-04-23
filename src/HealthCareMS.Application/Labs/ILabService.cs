@@ -18,6 +18,25 @@ public interface ILabService
         CreateLabPanelRequest request,
         CancellationToken cancellationToken);
 
+    Task<Result<LabBookingResponse>> CreateBookingAsync(
+        CreateLabBookingRequest request,
+        CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<LabBookingResponse>>> GetBookingsAsync(
+        string? status,
+        string? collectionType,
+        DateOnly? date,
+        CancellationToken cancellationToken);
+
+    Task<Result<LabBookingResponse>> CheckInBookingAsync(
+        Guid bookingId,
+        CheckInLabBookingRequest request,
+        CancellationToken cancellationToken);
+
+    Task<Result<LabBarcodeLabelPdfResponse>> GenerateBarcodeLabelPdfAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken);
+
     Task<Result<LabBookingResponse>> CreateConsultationLabOrderAsync(
         Guid appointmentId,
         CreateConsultationLabOrderRequest request,

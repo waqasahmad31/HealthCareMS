@@ -64,4 +64,33 @@ public interface IPharmacyService
     Task<Result<DispenseReceiptPdfResponse>> GenerateDispenseReceiptPdfAsync(
         Guid dispenseId,
         CancellationToken cancellationToken);
+
+    Task<Result<PharmacyOrderResponse>> CreateOrderAsync(
+        CreatePharmacyOrderRequest request,
+        CancellationToken cancellationToken);
+
+    Task<Result<PharmacyOrderResponse>> GetOrderAsync(
+        Guid orderId,
+        CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<PharmacyOrderResponse>>> GetOrdersAsync(
+        string? status,
+        Guid? patientId,
+        Guid? deliveryAgentUserId,
+        CancellationToken cancellationToken);
+
+    Task<Result<PharmacyOrderResponse>> ConfirmOrderAsync(
+        Guid orderId,
+        ConfirmPharmacyOrderRequest request,
+        CancellationToken cancellationToken);
+
+    Task<Result<PharmacyOrderResponse>> AssignDeliveryAgentAsync(
+        Guid orderId,
+        AssignDeliveryAgentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<Result<PharmacyOrderResponse>> UpdateOrderStatusAsync(
+        Guid orderId,
+        UpdatePharmacyOrderStatusRequest request,
+        CancellationToken cancellationToken);
 }

@@ -44,6 +44,7 @@ public sealed class LabSampleBookingConfiguration : IEntityTypeConfiguration<Lab
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.CollectionAddress).HasMaxLength(4000);
         builder.Property(x => x.SampleBarcode).HasMaxLength(120);
+        builder.Property(x => x.TokenNumber).HasMaxLength(35);
         builder.Property(x => x.Notes).HasMaxLength(1000);
         builder.Property(x => x.SubTotal).HasPrecision(12, 2);
         builder.Property(x => x.HomeCollectionFee).HasPrecision(12, 2);
@@ -53,6 +54,7 @@ public sealed class LabSampleBookingConfiguration : IEntityTypeConfiguration<Lab
         builder.HasIndex(x => x.AppointmentId);
         builder.HasIndex(x => x.PatientId);
         builder.HasIndex(x => x.SampleBarcode).IsUnique();
+        builder.HasIndex(x => x.TokenNumber);
         builder.HasQueryFilter(x => !x.IsDeleted);
 
         builder

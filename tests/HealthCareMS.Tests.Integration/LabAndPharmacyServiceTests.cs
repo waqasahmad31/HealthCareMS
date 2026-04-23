@@ -184,6 +184,94 @@ public sealed class LabAndPharmacyServiceTests
     }
 
     [Fact]
+    public async Task PharmacyService_ShouldPlaceConfirmAssignAndDeliverOnlineOrder()
+    {
+        await using var dbContext = CreateDbContext();
+        var appointment = await SeedAppointmentAsync(dbContext);
+        var pharmacyService = new PharmacyService(dbContext);
+        var deliveryRole = new Role { Name = $"Delivery-{Guid.NewGuid():N}", IsSystemRole = true };
+        var deliveryAgent = new ApplicationUser
+        {
+            Role = deliveryRole,
+            RoleId = deliveryRole.Id,
+            FirstName = "Delivery",
+            LastName = "Agent",
+            Email = $"delivery-{Guid.NewGuid():N}@example.com",
+            PasswordHash = "HASH",
+            IsActive = true,
+            IsEmailVerified = true
+        };
+        dbContext.Roles.Add(deliveryRole);
+        dbContext.Users.Add(deliveryAgent);
+        await dbContext.SaveChangesAsync();
+
+        var medicine = await pharmacyService.CreateMedicineAsync(
+            new CreateMedicineRequest(
+                null,
+                "Cetirizine",
+                "Zyrtec Online",
+                "Tablet",
+                "10mg",
+                $"DRAP-ORD-{Guid.NewGuid():N}",
+                "Martin Dow",
+                30m,
+                12m,
+                false,
+                5,
+                null),
+            CancellationToken.None);
+        var batch = await pharmacyService.CreateStockBatchAsync(
+            medicine.Value.Id,
+            new CreateStockBatchRequest(null, null, "ORD-FIFO-001", null, DateOnly.FromDateTime(DateTime.UtcNow.Date.AddYears(1)), 30, 12m),
+            CancellationToken.None);
+
+        var order = await pharmacyService.CreateOrderAsync(
+            new CreatePharmacyOrderRequest(
+                null,
+                appointment.PatientId,
+                null,
+                "House 1, Lahore",
+                null,
+                null,
+                "Please deliver after 6 PM.",
+                "prescription.jpg",
+                "image/jpeg",
+                [1, 2, 3, 4],
+                [new CreatePharmacyOrderItemRequest(medicine.Value.Id, 8)]),
+            CancellationToken.None);
+        var confirmed = await pharmacyService.ConfirmOrderAsync(
+            order.Value.Id,
+            new ConfirmPharmacyOrderRequest(deliveryAgent.Id, "Prescription reviewed."),
+            CancellationToken.None);
+        var assigned = await pharmacyService.GetOrdersAsync(null, null, deliveryAgent.Id, CancellationToken.None);
+        var dispatched = await pharmacyService.UpdateOrderStatusAsync(
+            order.Value.Id,
+            new UpdatePharmacyOrderStatusRequest("Dispatched", "Out for delivery."),
+            CancellationToken.None);
+        var delivered = await pharmacyService.UpdateOrderStatusAsync(
+            order.Value.Id,
+            new UpdatePharmacyOrderStatusRequest("Delivered", "Handed over to patient."),
+            CancellationToken.None);
+        var trackedBatch = await dbContext.StockBatches.SingleAsync(x => x.Id == batch.Value.Id);
+
+        Assert.True(order.IsSuccess);
+        Assert.StartsWith("PHO-", order.Value.OrderNumber, StringComparison.Ordinal);
+        Assert.Equal("Placed", order.Value.Status);
+        Assert.True(order.Value.HasPrescriptionUpload);
+        Assert.Equal(490m, order.Value.TotalAmount);
+        Assert.True(confirmed.IsSuccess);
+        Assert.Equal("AssignedForDelivery", confirmed.Value.Status);
+        Assert.Equal(deliveryAgent.Id, confirmed.Value.DeliveryAgentUserId);
+        Assert.True(assigned.IsSuccess);
+        Assert.Contains(assigned.Value, x => x.Id == order.Value.Id);
+        Assert.True(dispatched.IsSuccess);
+        Assert.Equal("Dispatched", dispatched.Value.Status);
+        Assert.True(delivered.IsSuccess);
+        Assert.Equal("Delivered", delivered.Value.Status);
+        Assert.Equal(22, trackedBatch.QuantityOnHand);
+    }
+
+    [Fact]
     public async Task LabService_ShouldSeedLargeCatalogueImportCsvAndCreatePanel()
     {
         await using var dbContext = CreateDbContext();
@@ -215,6 +303,46 @@ public sealed class LabAndPharmacyServiceTests
         Assert.True(panel.Value.Price > 0);
         Assert.True(panels.IsSuccess);
         Assert.Contains(panels.Value, x => x.Id == panel.Value.Id);
+    }
+
+    [Fact]
+    public async Task LabService_ShouldCreateOnSiteBookingCheckInAndGenerateBarcodeLabel()
+    {
+        await using var dbContext = CreateDbContext();
+        var appointment = await SeedAppointmentAsync(dbContext);
+        var service = new LabService(dbContext);
+        var tests = await service.SearchTestsAsync("cbc", CancellationToken.None);
+
+        var booking = await service.CreateBookingAsync(
+            new CreateLabBookingRequest(
+                null,
+                appointment.PatientId,
+                [tests.First().Id],
+                "OnSite",
+                DateTimeOffset.UtcNow.AddHours(2),
+                null,
+                "Patient will fast before sample."),
+            CancellationToken.None);
+        var checkIn = await service.CheckInBookingAsync(
+            booking.Value.Id,
+            new CheckInLabBookingRequest(true, "Fasting verified at desk."),
+            CancellationToken.None);
+        var label = await service.GenerateBarcodeLabelPdfAsync(booking.Value.Id, CancellationToken.None);
+        var queue = await service.GetBookingsAsync("CheckedIn", "OnSite", null, CancellationToken.None);
+
+        Assert.True(booking.IsSuccess);
+        Assert.StartsWith("LAB-", booking.Value.BookingNumber, StringComparison.Ordinal);
+        Assert.StartsWith("LQ-", booking.Value.TokenNumber, StringComparison.Ordinal);
+        Assert.StartsWith("SMP-", booking.Value.SampleBarcode, StringComparison.Ordinal);
+        Assert.Equal("Ordered", booking.Value.Status);
+        Assert.True(checkIn.IsSuccess);
+        Assert.Equal("CheckedIn", checkIn.Value.Status);
+        Assert.True(checkIn.Value.FastingVerified);
+        Assert.NotNull(checkIn.Value.CheckedInAt);
+        Assert.True(label.IsSuccess);
+        Assert.StartsWith("%PDF", Encoding.ASCII.GetString(label.Value.Content, 0, 4), StringComparison.Ordinal);
+        Assert.True(queue.IsSuccess);
+        Assert.Contains(queue.Value, x => x.Id == booking.Value.Id);
     }
 
     private static HealthCareDbContext CreateDbContext()

@@ -16,7 +16,8 @@ public enum LabBookingStatus
 {
     Ordered = 1,
     SampleCollected = 2,
-    Cancelled = 3
+    Cancelled = 3,
+    CheckedIn = 4
 }
 
 public sealed class LabSampleBooking : BaseEntity
@@ -40,6 +41,14 @@ public sealed class LabSampleBooking : BaseEntity
     public string? CollectionAddress { get; set; }
 
     public string? SampleBarcode { get; set; }
+
+    public string? TokenNumber { get; set; }
+
+    public bool? FastingVerified { get; set; }
+
+    public DateTimeOffset? CheckedInAt { get; set; }
+
+    public DateTimeOffset? BarcodeLabelGeneratedAt { get; set; }
 
     public string? Notes { get; set; }
 

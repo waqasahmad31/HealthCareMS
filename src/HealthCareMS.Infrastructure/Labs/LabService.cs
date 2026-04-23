@@ -5,6 +5,9 @@ using HealthCareMS.Domain.Labs;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace HealthCareMS.Infrastructure.Labs;
 
@@ -211,6 +214,176 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
         return Result<LabPanelResponse>.Success(Map(saved));
     }
 
+    public async Task<Result<LabBookingResponse>> CreateBookingAsync(
+        CreateLabBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationErrors = ValidateBooking(request);
+        if (validationErrors.Count > 0)
+        {
+            return Result<LabBookingResponse>.Failure(Error.Validation(validationErrors));
+        }
+
+        if (!Enum.TryParse<LabCollectionType>(request.CollectionType, ignoreCase: true, out var collectionType))
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_COLLECTION_TYPE_INVALID", "CollectionType must be OnSite or Home."));
+        }
+
+        var patient = await dbContext.Patients
+            .Include(x => x.User)
+            .SingleOrDefaultAsync(x => x.Id == request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_PATIENT_NOT_FOUND", "Patient was not found."));
+        }
+
+        await EnsureDefaultLabTestsAsync(cancellationToken);
+        var testIds = request.LabTestIds.Distinct().ToArray();
+        var tests = await dbContext.LabTests
+            .Where(x => testIds.Contains(x.Id) && x.IsActive)
+            .ToListAsync(cancellationToken);
+        if (tests.Count != testIds.Length)
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_TEST_NOT_FOUND", "One or more lab tests were not found."));
+        }
+
+        if (collectionType == LabCollectionType.Home && tests.Any(x => !x.IsHomeCollectionAvailable))
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_HOME_COLLECTION_UNAVAILABLE", "One or more tests are not available for home collection."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var subTotal = tests.Sum(x => x.Price);
+        var homeFee = collectionType == LabCollectionType.Home ? tests.Max(x => x.HomeCollectionExtra) : 0m;
+        var booking = new LabSampleBooking
+        {
+            TenantId = request.TenantId,
+            BookingNumber = await GenerateBookingNumberAsync(now, cancellationToken),
+            PatientId = patient.Id,
+            Patient = patient,
+            CollectionType = collectionType,
+            Status = LabBookingStatus.Ordered,
+            CollectionScheduledAt = request.CollectionScheduledAt?.ToUniversalTime(),
+            CollectionAddress = Normalize(request.CollectionAddress),
+            SampleBarcode = GenerateSampleBarcode(patient.Id),
+            TokenNumber = collectionType == LabCollectionType.OnSite
+                ? await GenerateTokenNumberAsync(now, cancellationToken)
+                : null,
+            Notes = Normalize(request.Notes),
+            SubTotal = subTotal,
+            HomeCollectionFee = homeFee,
+            TotalAmount = subTotal + homeFee
+        };
+
+        foreach (var test in tests.OrderBy(x => x.TestName))
+        {
+            booking.Items.Add(new LabBookingItem
+            {
+                LabTestId = test.Id,
+                LabTest = test,
+                Price = test.Price
+            });
+        }
+
+        dbContext.LabSampleBookings.Add(booking);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var saved = await BookingQuery().SingleAsync(x => x.Id == booking.Id, cancellationToken);
+        return Result<LabBookingResponse>.Success(Map(saved));
+    }
+
+    public async Task<Result<IReadOnlyList<LabBookingResponse>>> GetBookingsAsync(
+        string? status,
+        string? collectionType,
+        DateOnly? date,
+        CancellationToken cancellationToken)
+    {
+        var query = BookingQuery().AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<LabBookingStatus>(status, ignoreCase: true, out var parsedStatus))
+            {
+                return Result<IReadOnlyList<LabBookingResponse>>.Failure(new Error("LAB_BOOKING_STATUS_INVALID", "Status is invalid."));
+            }
+
+            query = query.Where(x => x.Status == parsedStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(collectionType))
+        {
+            if (!Enum.TryParse<LabCollectionType>(collectionType, ignoreCase: true, out var parsedCollectionType))
+            {
+                return Result<IReadOnlyList<LabBookingResponse>>.Failure(new Error("LAB_COLLECTION_TYPE_INVALID", "CollectionType must be OnSite or Home."));
+            }
+
+            query = query.Where(x => x.CollectionType == parsedCollectionType);
+        }
+
+        if (date.HasValue)
+        {
+            var dayStart = new DateTimeOffset(date.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var dayEnd = dayStart.AddDays(1);
+            query = query.Where(x => x.CreatedAt >= dayStart && x.CreatedAt < dayEnd);
+        }
+
+        var bookings = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<LabBookingResponse>>.Success(bookings.Select(Map).ToList());
+    }
+
+    public async Task<Result<LabBookingResponse>> CheckInBookingAsync(
+        Guid bookingId,
+        CheckInLabBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var booking = await BookingQuery().SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken);
+        if (booking is null)
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_BOOKING_NOT_FOUND", "Lab booking was not found."));
+        }
+
+        if (booking.CollectionType != LabCollectionType.OnSite)
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_BOOKING_CHECKIN_INVALID", "Only onsite bookings can be checked in."));
+        }
+
+        if (booking.Status != LabBookingStatus.Ordered)
+        {
+            return Result<LabBookingResponse>.Failure(new Error("LAB_BOOKING_STATUS_INVALID", "Only ordered bookings can be checked in."));
+        }
+
+        booking.Status = LabBookingStatus.CheckedIn;
+        booking.FastingVerified = request.FastingVerified;
+        booking.CheckedInAt = DateTimeOffset.UtcNow;
+        booking.Notes = MergeNotes(booking.Notes, request.Notes);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<LabBookingResponse>.Success(Map(booking));
+    }
+
+    public async Task<Result<LabBarcodeLabelPdfResponse>> GenerateBarcodeLabelPdfAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        var booking = await BookingQuery().SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken);
+        if (booking is null)
+        {
+            return Result<LabBarcodeLabelPdfResponse>.Failure(new Error("LAB_BOOKING_NOT_FOUND", "Lab booking was not found."));
+        }
+
+        booking.BarcodeLabelGeneratedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var pdf = GenerateBarcodeLabelPdf(booking);
+        return Result<LabBarcodeLabelPdfResponse>.Success(new LabBarcodeLabelPdfResponse(
+            pdf,
+            $"{booking.BookingNumber}-Label.pdf",
+            "application/pdf"));
+    }
+
     public async Task<Result<LabBookingResponse>> CreateConsultationLabOrderAsync(
         Guid appointmentId,
         CreateConsultationLabOrderRequest request,
@@ -277,6 +450,9 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
             CollectionScheduledAt = request.CollectionScheduledAt?.ToUniversalTime(),
             CollectionAddress = Normalize(request.CollectionAddress),
             SampleBarcode = GenerateSampleBarcode(appointmentId),
+            TokenNumber = collectionType == LabCollectionType.OnSite
+                ? await GenerateTokenNumberAsync(DateTimeOffset.UtcNow, cancellationToken)
+                : null,
             Notes = Normalize(request.Notes),
             SubTotal = subTotal,
             HomeCollectionFee = homeFee,
@@ -366,6 +542,14 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
         return $"{prefix}{count + 1:000000}";
     }
 
+    private async Task<string> GenerateTokenNumberAsync(DateTimeOffset createdAt, CancellationToken cancellationToken)
+    {
+        var datePart = createdAt.UtcDateTime.ToString("yyyyMMdd");
+        var prefix = $"LQ-{datePart}-";
+        var count = await dbContext.LabSampleBookings.CountAsync(x => x.TokenNumber != null && x.TokenNumber.StartsWith(prefix), cancellationToken);
+        return $"{prefix}{count + 1:000}";
+    }
+
     private static List<ValidationError> ValidateOrder(CreateConsultationLabOrderRequest request)
     {
         var errors = new List<ValidationError>();
@@ -382,6 +566,33 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
         if (!string.IsNullOrWhiteSpace(request.CollectionAddress) && request.CollectionAddress.Trim().Length > 4000)
         {
             errors.Add(new ValidationError(nameof(request.CollectionAddress), "CollectionAddress cannot exceed 4000 characters."));
+        }
+
+        return errors;
+    }
+
+    private static List<ValidationError> ValidateBooking(CreateLabBookingRequest request)
+    {
+        var errors = new List<ValidationError>();
+        if (request.PatientId == Guid.Empty)
+        {
+            errors.Add(new ValidationError(nameof(request.PatientId), "PatientId is required."));
+        }
+
+        if (request.LabTestIds is null || request.LabTestIds.Count == 0)
+        {
+            errors.Add(new ValidationError(nameof(request.LabTestIds), "At least one lab test is required."));
+        }
+
+        Required(request.CollectionType, nameof(request.CollectionType), errors);
+        if (!string.IsNullOrWhiteSpace(request.CollectionAddress) && request.CollectionAddress.Trim().Length > 4000)
+        {
+            errors.Add(new ValidationError(nameof(request.CollectionAddress), "CollectionAddress cannot exceed 4000 characters."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Notes) && request.Notes.Trim().Length > 1000)
+        {
+            errors.Add(new ValidationError(nameof(request.Notes), "Notes cannot exceed 1000 characters."));
         }
 
         return errors;
@@ -571,6 +782,10 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
             booking.CollectionScheduledAt,
             booking.CollectionAddress,
             booking.SampleBarcode,
+            booking.TokenNumber,
+            booking.FastingVerified,
+            booking.CheckedInAt,
+            booking.BarcodeLabelGeneratedAt,
             booking.Notes,
             booking.SubTotal,
             booking.HomeCollectionFee,
@@ -649,6 +864,60 @@ public sealed class LabService(HealthCareDbContext dbContext) : ILabService
     private static string GenerateSampleBarcode(Guid appointmentId)
     {
         return $"SMP-{DateTimeOffset.UtcNow:yyyyMMdd}-{appointmentId.ToString("N")[..8].ToUpperInvariant()}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+    }
+
+    private static byte[] GenerateBarcodeLabelPdf(LabSampleBooking booking)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+
+        return Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A6);
+                page.Margin(18);
+                page.DefaultTextStyle(text => text.FontSize(10).FontFamily(Fonts.Arial));
+
+                page.Header().Column(column =>
+                {
+                    column.Item().Text("HealthCareMS Lab Label").FontSize(15).Bold().FontColor(Colors.Blue.Darken2);
+                    column.Item().Text($"Booking: {booking.BookingNumber}");
+                    if (!string.IsNullOrWhiteSpace(booking.TokenNumber))
+                    {
+                        column.Item().Text($"Token: {booking.TokenNumber}").Bold();
+                    }
+                });
+
+                page.Content().PaddingVertical(10).Column(column =>
+                {
+                    column.Spacing(6);
+                    column.Item().Text($"{booking.Patient.FirstName} {booking.Patient.LastName}".Trim()).Bold();
+                    column.Item().Text($"Barcode: {booking.SampleBarcode}").FontSize(12).Bold();
+                    column.Item().Text($"Collection: {booking.CollectionType}");
+                    column.Item().Text($"Fasting verified: {(booking.FastingVerified == true ? "Yes" : "No")}");
+                    column.Item().Text("Tests").Bold();
+                    foreach (var item in booking.Items.OrderBy(x => x.LabTest.TestName))
+                    {
+                        column.Item().Text($"{item.LabTest.TestCode} - {item.LabTest.TestName}");
+                    }
+                });
+
+                page.Footer().AlignCenter().Text($"Generated {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC");
+            });
+        }).GeneratePdf();
+    }
+
+    private static string? MergeNotes(string? existingNotes, string? newNotes)
+    {
+        var normalized = Normalize(newNotes);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return existingNotes;
+        }
+
+        return string.IsNullOrWhiteSpace(existingNotes)
+            ? normalized
+            : $"{existingNotes.Trim()} | {normalized}";
     }
 
     private static void Required(string? value, string field, List<ValidationError> errors)

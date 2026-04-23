@@ -57,3 +57,31 @@ public sealed record DispensePrescriptionRequest(
     string VerificationCode,
     IReadOnlyList<DispensePrescriptionItemRequest> Items,
     string? Notes);
+
+public sealed record CreatePharmacyOrderItemRequest(
+    Guid MedicineId,
+    int Quantity);
+
+public sealed record CreatePharmacyOrderRequest(
+    Guid? TenantId,
+    Guid PatientId,
+    Guid? PrescriptionId,
+    string DeliveryAddress,
+    DateTimeOffset? DeliveryWindowStart,
+    DateTimeOffset? DeliveryWindowEnd,
+    string? PatientNotes,
+    string? PrescriptionUploadFileName,
+    string? PrescriptionUploadContentType,
+    byte[]? PrescriptionUploadContent,
+    IReadOnlyList<CreatePharmacyOrderItemRequest> Items);
+
+public sealed record ConfirmPharmacyOrderRequest(
+    Guid? DeliveryAgentUserId,
+    string? PharmacistNotes);
+
+public sealed record AssignDeliveryAgentRequest(
+    Guid DeliveryAgentUserId);
+
+public sealed record UpdatePharmacyOrderStatusRequest(
+    string Status,
+    string? Notes);

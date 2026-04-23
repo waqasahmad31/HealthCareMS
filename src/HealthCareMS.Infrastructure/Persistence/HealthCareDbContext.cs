@@ -91,6 +91,10 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<PrescriptionDispenseBatch> PrescriptionDispenseBatches => Set<PrescriptionDispenseBatch>();
 
+    public DbSet<PharmacyOrder> PharmacyOrders => Set<PharmacyOrder>();
+
+    public DbSet<PharmacyOrderItem> PharmacyOrderItems => Set<PharmacyOrderItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("pgcrypto");

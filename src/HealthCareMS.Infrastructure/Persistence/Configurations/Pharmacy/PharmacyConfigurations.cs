@@ -277,3 +277,82 @@ public sealed class PrescriptionDispenseBatchConfiguration : IEntityTypeConfigur
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public sealed class PharmacyOrderConfiguration : IEntityTypeConfiguration<PharmacyOrder>
+{
+    public void Configure(EntityTypeBuilder<PharmacyOrder> builder)
+    {
+        builder.ToTable("PharmacyOrders", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.OrderNumber).HasMaxLength(35).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
+        builder.Property(x => x.DeliveryAddress).HasMaxLength(1000).IsRequired();
+        builder.Property(x => x.PrescriptionUploadFileName).HasMaxLength(255);
+        builder.Property(x => x.PrescriptionUploadContentType).HasMaxLength(120);
+        builder.Property(x => x.PatientNotes).HasMaxLength(1000);
+        builder.Property(x => x.PharmacistNotes).HasMaxLength(1000);
+        builder.Property(x => x.SubTotal).HasPrecision(12, 2);
+        builder.Property(x => x.DeliveryFee).HasPrecision(12, 2);
+        builder.Property(x => x.TotalAmount).HasPrecision(12, 2);
+
+        builder.HasIndex(x => x.TenantId);
+        builder.HasIndex(x => x.OrderNumber).IsUnique();
+        builder.HasIndex(x => new { x.PatientId, x.OrderedAt });
+        builder.HasIndex(x => new { x.Status, x.OrderedAt });
+        builder.HasIndex(x => x.DeliveryAgentUserId);
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.Tenant)
+            .WithMany()
+            .HasForeignKey(x => x.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Patient)
+            .WithMany()
+            .HasForeignKey(x => x.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.Prescription)
+            .WithMany()
+            .HasForeignKey(x => x.PrescriptionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.DeliveryAgentUser)
+            .WithMany()
+            .HasForeignKey(x => x.DeliveryAgentUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class PharmacyOrderItemConfiguration : IEntityTypeConfiguration<PharmacyOrderItem>
+{
+    public void Configure(EntityTypeBuilder<PharmacyOrderItem> builder)
+    {
+        builder.ToTable("PharmacyOrderItems", DatabaseSchemas.Pharmacy);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.MedicineName).HasMaxLength(300).IsRequired();
+        builder.Property(x => x.UnitPrice).HasPrecision(12, 2);
+        builder.Property(x => x.LineTotal).HasPrecision(12, 2);
+
+        builder.HasIndex(x => new { x.PharmacyOrderId, x.MedicineId }).IsUnique();
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.PharmacyOrder)
+            .WithMany(x => x.Items)
+            .HasForeignKey(x => x.PharmacyOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.Medicine)
+            .WithMany()
+            .HasForeignKey(x => x.MedicineId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}

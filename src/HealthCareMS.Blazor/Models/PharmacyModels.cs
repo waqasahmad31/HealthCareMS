@@ -239,3 +239,90 @@ public sealed record PrescriptionDispenseModel(
     decimal TotalAmount,
     string? Notes,
     IReadOnlyList<PrescriptionDispenseItemModel> Items);
+
+public sealed class PharmacyOrderItemFormModel
+{
+    public Guid MedicineId { get; set; }
+
+    public int Quantity { get; set; } = 1;
+}
+
+public sealed class PharmacyOrderFormModel
+{
+    public Guid? TenantId { get; set; }
+
+    public Guid PatientId { get; set; }
+
+    public Guid? PrescriptionId { get; set; }
+
+    public string DeliveryAddress { get; set; } = string.Empty;
+
+    public DateTimeOffset? DeliveryWindowStart { get; set; }
+
+    public DateTimeOffset? DeliveryWindowEnd { get; set; }
+
+    public string? PatientNotes { get; set; }
+
+    public string? PrescriptionUploadFileName { get; set; }
+
+    public string? PrescriptionUploadContentType { get; set; }
+
+    public byte[]? PrescriptionUploadContent { get; set; }
+
+    public IReadOnlyList<PharmacyOrderItemFormModel> Items { get; set; } = [];
+}
+
+public sealed class ConfirmPharmacyOrderFormModel
+{
+    public Guid? DeliveryAgentUserId { get; set; }
+
+    public string? PharmacistNotes { get; set; }
+}
+
+public sealed class AssignDeliveryAgentFormModel
+{
+    public Guid DeliveryAgentUserId { get; set; }
+}
+
+public sealed class UpdatePharmacyOrderStatusFormModel
+{
+    public string Status { get; set; } = "Prepared";
+
+    public string? Notes { get; set; }
+}
+
+public sealed record PharmacyOrderItemModel(
+    Guid Id,
+    Guid MedicineId,
+    string MedicineName,
+    int Quantity,
+    decimal UnitPrice,
+    decimal LineTotal);
+
+public sealed record PharmacyOrderModel(
+    Guid Id,
+    Guid? TenantId,
+    string OrderNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid? PrescriptionId,
+    string Status,
+    DateTimeOffset OrderedAt,
+    DateTimeOffset? ReviewedAt,
+    DateTimeOffset? ConfirmedAt,
+    Guid? DeliveryAgentUserId,
+    string? DeliveryAgentName,
+    DateTimeOffset? AssignedAt,
+    DateTimeOffset? DispatchedAt,
+    DateTimeOffset? DeliveredAt,
+    string DeliveryAddress,
+    DateTimeOffset? DeliveryWindowStart,
+    DateTimeOffset? DeliveryWindowEnd,
+    bool HasPrescriptionUpload,
+    string? PrescriptionUploadFileName,
+    string? PatientNotes,
+    string? PharmacistNotes,
+    decimal SubTotal,
+    decimal DeliveryFee,
+    decimal TotalAmount,
+    IReadOnlyList<PharmacyOrderItemModel> Items);

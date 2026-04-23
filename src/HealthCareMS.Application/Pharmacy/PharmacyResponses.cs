@@ -169,3 +169,39 @@ public sealed record DispenseReceiptPdfResponse(
     byte[] Content,
     string FileName,
     string ContentType);
+
+public sealed record PharmacyOrderItemResponse(
+    Guid Id,
+    Guid MedicineId,
+    string MedicineName,
+    int Quantity,
+    decimal UnitPrice,
+    decimal LineTotal);
+
+public sealed record PharmacyOrderResponse(
+    Guid Id,
+    Guid? TenantId,
+    string OrderNumber,
+    Guid PatientId,
+    string PatientName,
+    Guid? PrescriptionId,
+    string Status,
+    DateTimeOffset OrderedAt,
+    DateTimeOffset? ReviewedAt,
+    DateTimeOffset? ConfirmedAt,
+    Guid? DeliveryAgentUserId,
+    string? DeliveryAgentName,
+    DateTimeOffset? AssignedAt,
+    DateTimeOffset? DispatchedAt,
+    DateTimeOffset? DeliveredAt,
+    string DeliveryAddress,
+    DateTimeOffset? DeliveryWindowStart,
+    DateTimeOffset? DeliveryWindowEnd,
+    bool HasPrescriptionUpload,
+    string? PrescriptionUploadFileName,
+    string? PatientNotes,
+    string? PharmacistNotes,
+    decimal SubTotal,
+    decimal DeliveryFee,
+    decimal TotalAmount,
+    IReadOnlyList<PharmacyOrderItemResponse> Items);

@@ -1,0 +1,285 @@
+@page "/pharmacy/orders"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Pharmacy Orders</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Online Ordering</p>
+        <h1>Medicine Orders</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Refresh Catalogue</button>
+        <button class="secondary-button" type="button" @onclick="LoadOrdersAsync" disabled="@IsBusy">Refresh Orders</button>
+        <button class="primary-button" type="button" @onclick="PlaceOrderAsync" disabled="@IsBusy">Checkout</button>
+    </div>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Browse Medicines</h2>
+            <span class="status-pill blue">@Medicines.Count</span>
+        </div>
+        <div class="entity-form pharmacy-filter">
+            <label>Search<InputText @bind-Value="Search" /></label>
+            <button class="secondary-button" type="button" @onclick="LoadMedicinesAsync" disabled="@IsBusy">Search</button>
+        </div>
+        <div class="table-shell">
+            @foreach (var medicine in Medicines)
+            {
+                <div class="table-row pharmacy-order-row">
+                    <span>@medicine.BrandName (@medicine.GenericName)</span>
+                    <span>@medicine.UnitPrice.ToString("0.00")</span>
+                    <span>@medicine.StockOnHand units</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => AddToCart(medicine)">Add</button>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Checkout</h2>
+            <span class="status-pill green">@Cart.Count</span>
+        </div>
+        <EditForm Model="OrderForm" class="entity-form">
+            <label>PatientId<InputText @bind-Value="PatientIdText" /></label>
+            <label>PrescriptionId<InputText @bind-Value="PrescriptionIdText" /></label>
+            <label>DeliveryAddress<InputTextArea @bind-Value="OrderForm.DeliveryAddress" /></label>
+            <label>PatientNotes<InputTextArea @bind-Value="OrderForm.PatientNotes" /></label>
+            <InputFile OnChange="OnPrescriptionUploadAsync" />
+        </EditForm>
+        <div class="table-shell cart-list">
+            @foreach (var line in Cart)
+            {
+                <div class="table-row pharmacy-order-row">
+                    <span>@line.MedicineName</span>
+                    <InputNumber @bind-Value="line.Quantity" />
+                    <span>@line.LineTotal.ToString("0.00")</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => RemoveFromCart(line.MedicineId)">Remove</button>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Order Review</h2>
+        <span class="status-pill blue">@Orders.Count</span>
+    </div>
+    <div class="entity-form pharmacy-filter">
+        <label>
+            Status
+            <InputSelect @bind-Value="OrderStatusFilter">
+                <option value="">All</option>
+                <option>Placed</option>
+                <option>Confirmed</option>
+                <option>AssignedForDelivery</option>
+                <option>Prepared</option>
+                <option>Dispatched</option>
+                <option>Delivered</option>
+            </InputSelect>
+        </label>
+        <button class="secondary-button" type="button" @onclick="LoadOrdersAsync" disabled="@IsBusy">Filter</button>
+    </div>
+    <div class="table-shell">
+        @foreach (var order in Orders)
+        {
+            <div class="table-row pharmacy-online-order-row">
+                <span>@order.OrderNumber<br />@order.PatientName</span>
+                <span>@order.Status<br />@order.TotalAmount.ToString("0.00")</span>
+                <span>@order.DeliveryAgentName</span>
+                <div class="header-actions">
+                    <button class="secondary-button small-button" type="button" @onclick="() => ConfirmOrderAsync(order.Id)" disabled="@IsBusy">Confirm</button>
+                    <button class="secondary-button small-button" type="button" @onclick='() => UpdateOrderStatusAsync(order.Id, "Prepared")' disabled="@IsBusy">Prepare</button>
+                    <button class="secondary-button small-button" type="button" @onclick='() => UpdateOrderStatusAsync(order.Id, "Dispatched")' disabled="@IsBusy">Dispatch</button>
+                    <button class="secondary-button small-button" type="button" @onclick='() => UpdateOrderStatusAsync(order.Id, "Delivered")' disabled="@IsBusy">Deliver</button>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private IReadOnlyList<MedicineModel> Medicines { get; set; } = [];
+
+    private IReadOnlyList<PharmacyOrderModel> Orders { get; set; } = [];
+
+    private List<CartLine> Cart { get; } = [];
+
+    private PharmacyOrderFormModel OrderForm { get; set; } = new();
+
+    private string Search { get; set; } = string.Empty;
+
+    private string PatientIdText { get; set; } = string.Empty;
+
+    private string PrescriptionIdText { get; set; } = string.Empty;
+
+    private string OrderStatusFilter { get; set; } = string.Empty;
+
+    private bool IsBusy { get; set; }
+
+    private string? StatusMessage { get; set; }
+
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMedicinesAsync();
+        await LoadOrdersAsync();
+    }
+
+    private async Task LoadMedicinesAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<MedicineModel>>($"api/v1/pharmacy/medicines?search={Uri.EscapeDataString(Search)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            Medicines = result.Data;
+            SetStatus("Medicine catalogue loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Medicine catalogue unavailable.", "tone-amber");
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        var url = string.IsNullOrWhiteSpace(OrderStatusFilter)
+            ? "api/v1/pharmacy/orders"
+            : $"api/v1/pharmacy/orders?status={Uri.EscapeDataString(OrderStatusFilter)}";
+        var result = await ApiClient.GetAsync<IReadOnlyList<PharmacyOrderModel>>(url);
+        if (result?.Success == true && result.Data is not null)
+        {
+            Orders = result.Data;
+        }
+    }
+
+    private void AddToCart(MedicineModel medicine)
+    {
+        var line = Cart.FirstOrDefault(x => x.MedicineId == medicine.Id);
+        if (line is null)
+        {
+            Cart.Add(new CartLine(medicine.Id, medicine.BrandName, medicine.UnitPrice, 1));
+        }
+        else
+        {
+            line.Quantity++;
+        }
+    }
+
+    private void RemoveFromCart(Guid medicineId)
+    {
+        var line = Cart.FirstOrDefault(x => x.MedicineId == medicineId);
+        if (line is not null)
+        {
+            Cart.Remove(line);
+        }
+    }
+
+    private async Task OnPrescriptionUploadAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        await using var stream = file.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        OrderForm.PrescriptionUploadFileName = file.Name;
+        OrderForm.PrescriptionUploadContentType = file.ContentType;
+        OrderForm.PrescriptionUploadContent = memory.ToArray();
+        SetStatus("Prescription uploaded to checkout.", "tone-blue");
+    }
+
+    private async Task PlaceOrderAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("Enter a valid patient id.", "tone-amber");
+            return;
+        }
+
+        OrderForm.PatientId = patientId;
+        OrderForm.PrescriptionId = Guid.TryParse(PrescriptionIdText, out var prescriptionId) ? prescriptionId : null;
+        OrderForm.Items = Cart.Select(x => new PharmacyOrderItemFormModel { MedicineId = x.MedicineId, Quantity = x.Quantity }).ToList();
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<PharmacyOrderFormModel, PharmacyOrderModel>("api/v1/pharmacy/orders", OrderForm);
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            Cart.Clear();
+            OrderForm = new PharmacyOrderFormModel();
+            await LoadOrdersAsync();
+            SetStatus("Online order placed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Order checkout failed.", "tone-amber");
+    }
+
+    private async Task ConfirmOrderAsync(Guid orderId)
+    {
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<ConfirmPharmacyOrderFormModel, PharmacyOrderModel>(
+            $"api/v1/pharmacy/orders/{orderId}/confirm",
+            new ConfirmPharmacyOrderFormModel { PharmacistNotes = "Reviewed and confirmed from pharmacy workspace." });
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            await LoadOrdersAsync();
+            SetStatus("Order confirmed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Order confirm failed.", "tone-amber");
+    }
+
+    private async Task UpdateOrderStatusAsync(Guid orderId, string status)
+    {
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdatePharmacyOrderStatusFormModel, PharmacyOrderModel>(
+            $"api/v1/pharmacy/orders/{orderId}/status",
+            new UpdatePharmacyOrderStatusFormModel { Status = status, Notes = $"Moved to {status}." });
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            await LoadOrdersAsync();
+            SetStatus($"Order moved to {status}.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Order status update failed.", "tone-amber");
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private sealed class CartLine(Guid medicineId, string medicineName, decimal unitPrice, int quantity)
+    {
+        public Guid MedicineId { get; } = medicineId;
+
+        public string MedicineName { get; } = medicineName;
+
+        public decimal UnitPrice { get; } = unitPrice;
+
+        public int Quantity { get; set; } = quantity;
+
+        public decimal LineTotal => Quantity * UnitPrice;
+    }
+}

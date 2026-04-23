@@ -28,6 +28,10 @@ public sealed record LabBookingResponse(
     DateTimeOffset? CollectionScheduledAt,
     string? CollectionAddress,
     string? SampleBarcode,
+    string? TokenNumber,
+    bool? FastingVerified,
+    DateTimeOffset? CheckedInAt,
+    DateTimeOffset? BarcodeLabelGeneratedAt,
     string? Notes,
     decimal SubTotal,
     decimal HomeCollectionFee,
@@ -57,3 +61,8 @@ public sealed record LabPanelResponse(
     decimal Price,
     bool IsActive,
     IReadOnlyList<LabTestResponse> Tests);
+
+public sealed record LabBarcodeLabelPdfResponse(
+    byte[] Content,
+    string FileName,
+    string ContentType);

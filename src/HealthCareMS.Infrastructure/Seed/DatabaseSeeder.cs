@@ -55,7 +55,7 @@ public sealed class DatabaseSeeder(
             dbContext.Roles.Add(superAdminRole);
         }
 
-        var platformRoleNames = new[] { "Patient", "Doctor", "LabAdmin", "LabStaff" };
+        var platformRoleNames = new[] { "Patient", "Doctor", "LabAdmin", "LabStaff", "PharmacyAdmin", "Pharmacist", "DeliveryAgent" };
         foreach (var roleName in platformRoleNames)
         {
             var exists = await dbContext.Roles.AnyAsync(x => x.TenantId == null && x.Name == roleName, cancellationToken);
@@ -94,6 +94,30 @@ public sealed class DatabaseSeeder(
                 PermissionKeys.Lab.ResultsValidate,
                 PermissionKeys.Lab.ResultsRelease,
                 PermissionKeys.Lab.ReportsDownload
+            ],
+            allPermissions,
+            cancellationToken);
+        await EnsureRolePermissionsAsync(
+            "PharmacyAdmin",
+            PermissionKeys.Pharmacy.All,
+            allPermissions,
+            cancellationToken);
+        await EnsureRolePermissionsAsync(
+            "Pharmacist",
+            [
+                PermissionKeys.Pharmacy.MedicinesView,
+                PermissionKeys.Pharmacy.StockView,
+                PermissionKeys.Pharmacy.OrdersView,
+                PermissionKeys.Pharmacy.OrdersProcess,
+                PermissionKeys.Pharmacy.Dispense
+            ],
+            allPermissions,
+            cancellationToken);
+        await EnsureRolePermissionsAsync(
+            "DeliveryAgent",
+            [
+                PermissionKeys.Pharmacy.OrdersView,
+                PermissionKeys.Pharmacy.OrdersProcess
             ],
             allPermissions,
             cancellationToken);
