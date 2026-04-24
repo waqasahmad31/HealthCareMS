@@ -1,0 +1,168 @@
+@page "/pharmacy/reports"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.JSInterop
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Pharmacy Reports</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S24 Reporting</p>
+        <h1>Sales, Valuation & Reconciliation</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadReportsAsync">Refresh</button>
+        <button class="secondary-button" type="button" @onclick='() => ExportAsync("sales", "csv")'>Sales CSV</button>
+        <button class="primary-button" type="button" @onclick='() => ExportAsync("reconciliation", "pdf")'>Reconciliation PDF</button>
+    </div>
+</section>
+
+<section class="entity-form panel">
+    <label>From<input type="date" value="@FromText" @onchange="OnFromChanged" /></label>
+    <label>To<input type="date" value="@ToText" @onchange="OnToChanged" /></label>
+</section>
+
+@if (Snapshot is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card"><span class="metric-label">Revenue</span><strong>@Snapshot.TotalRevenue.ToString("0.00")</strong><span class="tone-green">PKR</span></article>
+        <article class="metric-card"><span class="metric-label">Refunded</span><strong>@Snapshot.TotalRefunded.ToString("0.00")</strong><span class="tone-amber">PKR</span></article>
+        <article class="metric-card"><span class="metric-label">Orders</span><strong>@Snapshot.TotalOrders</strong><span class="tone-blue">@Snapshot.TotalDispenses dispenses</span></article>
+        <article class="metric-card"><span class="metric-label">Stock Value</span><strong>@Snapshot.StockValuation.ToString("0.00")</strong><span class="tone-muted">inventory</span></article>
+    </section>
+
+    <section class="portal-grid">
+        <article class="panel">
+            <div class="panel-header"><h2>Top Medicines</h2><span class="status-pill green">@Snapshot.TopMedicines.Count</span></div>
+            @foreach (var item in Snapshot.TopMedicines)
+            {
+                <div class="queue-row">
+                    <div><strong>@item.MedicineName</strong><span>Qty @item.QuantitySold</span></div>
+                    <span class="status-pill blue">@item.Revenue.ToString("0.00")</span>
+                </div>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-header"><h2>Expiring Batches</h2><span class="status-pill amber">@Snapshot.ExpiryItems.Count</span></div>
+            @foreach (var item in Snapshot.ExpiryItems.Take(6))
+            {
+                <div class="queue-row">
+                    <div><strong>@item.MedicineName</strong><span>@item.BatchNumber | @item.ExpiryDate.ToString("yyyy-MM-dd")</span></div>
+                    <span class="status-pill @(item.Severity == "Critical" ? "amber" : "blue")">@item.DaysToExpiry d</span>
+                </div>
+            }
+        </article>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header"><h2>Reconciliation</h2><span class="status-pill blue">@Snapshot.ReconciliationItems.Count</span></div>
+        <div class="table-shell">
+            <div class="table-row table-head pharmacy-online-order-row">
+                <span>Payment</span>
+                <span>Status</span>
+                <span>Net</span>
+                <span>Invoice</span>
+            </div>
+            @foreach (var item in Snapshot.ReconciliationItems.Take(12))
+            {
+                <div class="table-row pharmacy-online-order-row">
+                    <span>@item.PaymentNumber<br />@item.Gateway</span>
+                    <span>@item.PaymentStatus<br />@item.ReconciliationStatus</span>
+                    <span>@item.NetAmount.ToString("0.00")</span>
+                    <span>@item.InvoiceNumber</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private AnalyticsLikePharmacyReportsModel? Snapshot { get; set; }
+    private DateOnly From { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-29));
+    private DateOnly To { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+    private string FromText => From.ToString("yyyy-MM-dd");
+    private string ToText => To.ToString("yyyy-MM-dd");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportsAsync();
+    }
+
+    private async Task LoadReportsAsync()
+    {
+        var result = await ApiClient.GetAsync<AnalyticsLikePharmacyReportsModel>($"api/v1/pharmacy/reports?from={From:yyyy-MM-dd}&to={To:yyyy-MM-dd}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            Snapshot = result.Data;
+            SetStatus("Pharmacy reports loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Pharmacy reports unavailable.", "tone-amber");
+    }
+
+    private async Task ExportAsync(string reportType, string format)
+    {
+        var download = await ApiClient.DownloadFileAsync($"api/v1/pharmacy/reports/export?reportType={Uri.EscapeDataString(reportType)}&format={Uri.EscapeDataString(format)}&from={From:yyyy-MM-dd}&to={To:yyyy-MM-dd}");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Report export failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.downloadFile", download.FileName, download.ContentType, Convert.ToBase64String(download.Content));
+        SetStatus("Report exported.", "tone-green");
+    }
+
+    private void OnFromChanged(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            From = parsed;
+        }
+    }
+
+    private void OnToChanged(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            To = parsed;
+        }
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private sealed record AnalyticsLikePharmacyReportsModel(
+        DateOnly From,
+        DateOnly To,
+        decimal TotalRevenue,
+        decimal TotalRefunded,
+        int TotalOrders,
+        int TotalDispenses,
+        decimal StockValuation,
+        IReadOnlyList<PharmacySalesPointModel> SalesByPeriod,
+        IReadOnlyList<TopMedicineReportModel> TopMedicines,
+        IReadOnlyList<StockValuationReportModel> StockValuationItems,
+        IReadOnlyList<ExpiryReportItemModel> ExpiryItems,
+        IReadOnlyList<ReconciliationReportItemModel> ReconciliationItems);
+
+    private sealed record PharmacySalesPointModel(DateOnly Date, decimal Revenue, int Orders, int Dispenses);
+    private sealed record TopMedicineReportModel(Guid MedicineId, string MedicineName, int QuantitySold, decimal Revenue);
+    private sealed record StockValuationReportModel(Guid MedicineId, string MedicineName, int StockOnHand, decimal UnitCostPrice, decimal StockValue, DateOnly? NearestExpiryDate);
+    private sealed record ExpiryReportItemModel(Guid StockBatchId, Guid MedicineId, string MedicineName, string BatchNumber, DateOnly ExpiryDate, int QuantityOnHand, int DaysToExpiry, decimal PotentialLoss, string Severity);
+    private sealed record ReconciliationReportItemModel(Guid PaymentTransactionId, string PaymentNumber, string Gateway, string PaymentStatus, decimal PaidAmount, decimal RefundedAmount, decimal NetAmount, DateTimeOffset? PaidAt, string? OrderNumber, string? InvoiceNumber, string ReconciliationStatus);
+}

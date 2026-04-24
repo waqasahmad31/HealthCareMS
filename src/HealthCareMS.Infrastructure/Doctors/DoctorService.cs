@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HealthCareMS.Infrastructure.Doctors;
 
-public sealed class DoctorService(
+public sealed partial class DoctorService(
     HealthCareDbContext dbContext,
     IPasswordHasher passwordHasher,
     IDistributedQueryCache queryCache) : IDoctorService

@@ -8,6 +8,7 @@ using HealthCareMS.Domain.Identity;
 using HealthCareMS.Domain.Labs;
 using HealthCareMS.Domain.Notifications;
 using HealthCareMS.Domain.Patients;
+using HealthCareMS.Domain.Payments;
 using HealthCareMS.Domain.Pharmacy;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,6 +35,10 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
 
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
+
+    public DbSet<UserAuthSession> UserAuthSessions => Set<UserAuthSession>();
+
+    public DbSet<UserLoginActivity> UserLoginActivities => Set<UserLoginActivity>();
 
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
@@ -83,6 +88,8 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
 
     public DbSet<LabPanelItem> LabPanelItems => Set<LabPanelItem>();
 
+    public DbSet<LabTestResult> LabTestResults => Set<LabTestResult>();
+
     public DbSet<Medicine> Medicines => Set<Medicine>();
 
     public DbSet<StockBatch> StockBatches => Set<StockBatch>();
@@ -102,6 +109,12 @@ public sealed class HealthCareDbContext : DbContext, IUnitOfWork
     public DbSet<PharmacyOrder> PharmacyOrders => Set<PharmacyOrder>();
 
     public DbSet<PharmacyOrderItem> PharmacyOrderItems => Set<PharmacyOrderItem>();
+
+    public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
+
+    public DbSet<PaymentInvoice> PaymentInvoices => Set<PaymentInvoice>();
+
+    public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

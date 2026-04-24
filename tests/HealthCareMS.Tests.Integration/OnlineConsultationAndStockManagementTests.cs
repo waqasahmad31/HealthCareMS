@@ -85,7 +85,7 @@ public sealed class OnlineConsultationAndStockManagementTests
     public async Task PharmacyStockManagement_ShouldSelectFifoAdjustBatchAndFireAlerts()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PharmacyService(dbContext);
+        var service = new PharmacyService(dbContext, new TestDistributedQueryCache());
         var medicine = await service.CreateMedicineAsync(
             new CreateMedicineRequest(
                 null,

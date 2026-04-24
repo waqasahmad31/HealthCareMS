@@ -33,3 +33,11 @@ public sealed record DoctorScheduleSlotRequest(
     short SlotDurationMinutes,
     bool IsOnlineAvailable,
     bool IsOnSiteAvailable);
+
+public sealed record DoctorRecommendationRequest(
+    Guid? PatientId,
+    string? Specialization,
+    string? City,
+    decimal? MaxFee,
+    DateOnly? Date,
+    string AppointmentType = "Online");

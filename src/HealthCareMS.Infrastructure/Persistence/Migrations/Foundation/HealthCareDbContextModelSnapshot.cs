@@ -941,6 +941,10 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CssClass")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -960,6 +964,16 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
+
+                    b.Property<string>("LabelEn")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("LabelUr")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
 
                     b.Property<string>("Symbol")
                         .IsRequired()
@@ -1349,6 +1363,175 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.ToTable("Tenants", "Identity");
                 });
 
+            modelBuilder.Entity("HealthCareMS.Domain.Identity.UserAuthSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RefreshTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RefreshTokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ExpiresAt");
+
+                    b.ToTable("UserAuthSessions", "Identity");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Identity.UserLoginActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSuccessful")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("Email", "AttemptedAt");
+
+                    b.ToTable("UserLoginActivities", "Identity");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Identity.UserNavigationAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("NavigationItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NavigationItemId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "NavigationItemId", "IsDeleted")
+                        .IsUnique();
+
+                    b.ToTable("UserNavigationAssignments", "Identity");
+                });
+
             modelBuilder.Entity("HealthCareMS.Domain.Identity.UserPermission", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -1548,13 +1731,29 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<Guid?>("CollectionAgentUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CollectionAssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("CollectionScheduledAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CollectionStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CollectionStatusNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("CollectionType")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("CollectionWindowEndAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1585,9 +1784,22 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.Property<Guid?>("PrescriptionId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("ReportGeneratedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReportVerificationCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTimeOffset?>("ResultsReleasedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("SampleBarcode")
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
+
+                    b.Property<DateTimeOffset?>("SampleCollectedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1622,9 +1834,13 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.HasIndex("BookingNumber")
                         .IsUnique();
 
+                    b.HasIndex("CollectionAgentUserId");
+
                     b.HasIndex("PatientId");
 
                     b.HasIndex("PrescriptionId");
+
+                    b.HasIndex("ReportVerificationCode");
 
                     b.HasIndex("SampleBarcode")
                         .IsUnique();
@@ -1717,6 +1933,144 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.HasIndex("TestName", "Category");
 
                     b.ToTable("LabTests", "Lab");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Labs.LabTestResult", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AddendumAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AddendumByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AddendumNotes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("AutoValidatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CriticalAlertAcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CriticalAlertAcknowledgedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CriticalAlertSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CriticalValueSummary")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("EnteredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("EnteredByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("HasCriticalValue")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAbnormal")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("LabBookingItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LabSampleBookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LabTestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ManagerValidatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ManagerValidatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ParametersJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReleasedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResultNumber")
+                        .IsRequired()
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("TechnicianValidatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("TechnicianValidatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AddendumByUserId");
+
+                    b.HasIndex("CriticalAlertAcknowledgedByUserId");
+
+                    b.HasIndex("EnteredByUserId");
+
+                    b.HasIndex("LabBookingItemId")
+                        .IsUnique();
+
+                    b.HasIndex("LabSampleBookingId");
+
+                    b.HasIndex("LabTestId");
+
+                    b.HasIndex("ManagerValidatedByUserId");
+
+                    b.HasIndex("ReleasedByUserId");
+
+                    b.HasIndex("ResultNumber")
+                        .IsUnique();
+
+                    b.HasIndex("TechnicianValidatedByUserId");
+
+                    b.HasIndex("Status", "HasCriticalValue", "IsAbnormal");
+
+                    b.ToTable("LabTestResults", "Lab");
                 });
 
             modelBuilder.Entity("HealthCareMS.Domain.Notifications.Notification", b =>
@@ -2121,6 +2475,324 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.HasIndex("PatientId", "RecordedAt");
 
                     b.ToTable("PatientVitals", "Patient");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentInvoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BillingAddress")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("BillingEmail")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("BillingName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BillingPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("DeliveryFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PaymentTransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PharmacyOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<decimal>("SubTotal")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("PaymentTransactionId")
+                        .IsUnique();
+
+                    b.HasIndex("PharmacyOrderId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("PaymentInvoices", "Payment");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentRefund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("PaymentInvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PaymentTransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RefundNumber")
+                        .IsRequired()
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RequestedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentInvoiceId");
+
+                    b.HasIndex("PaymentTransactionId");
+
+                    b.HasIndex("RefundNumber")
+                        .IsUnique();
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("Status", "RequestedAt");
+
+                    b.ToTable("PaymentRefunds", "Payment");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<string>("CheckoutUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTimeOffset?>("FailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("FailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Gateway")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastWebhookPayload")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("LastWebhookReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentNumber")
+                        .IsRequired()
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<Guid?>("PharmacyOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReferenceType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SessionToken")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentNumber")
+                        .IsUnique();
+
+                    b.HasIndex("PharmacyOrderId");
+
+                    b.HasIndex("SessionToken")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ReferenceType", "ReferenceId", "Status");
+
+                    b.ToTable("PaymentTransactions", "Payment");
                 });
 
             modelBuilder.Entity("HealthCareMS.Domain.Pharmacy.Medicine", b =>
@@ -3110,6 +3782,46 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.Navigation("CreatedBySuperAdmin");
                 });
 
+            modelBuilder.Entity("HealthCareMS.Domain.Identity.UserAuthSession", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Identity.UserLoginActivity", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Identity.UserNavigationAssignment", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Identity.NavigationItem", "NavigationItem")
+                        .WithMany()
+                        .HasForeignKey("NavigationItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("NavigationItem");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("HealthCareMS.Domain.Identity.UserPermission", b =>
                 {
                     b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "GrantedByUser")
@@ -3192,6 +3904,11 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                         .HasForeignKey("AppointmentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "CollectionAgentUser")
+                        .WithMany()
+                        .HasForeignKey("CollectionAgentUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("HealthCareMS.Domain.Patients.Patient", "Patient")
                         .WithMany()
                         .HasForeignKey("PatientId")
@@ -3210,6 +3927,8 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
 
                     b.Navigation("Appointment");
 
+                    b.Navigation("CollectionAgentUser");
+
                     b.Navigation("Patient");
 
                     b.Navigation("Prescription");
@@ -3225,6 +3944,75 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Labs.LabTestResult", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "AddendumByUser")
+                        .WithMany()
+                        .HasForeignKey("AddendumByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "CriticalAlertAcknowledgedByUser")
+                        .WithMany()
+                        .HasForeignKey("CriticalAlertAcknowledgedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "EnteredByUser")
+                        .WithMany()
+                        .HasForeignKey("EnteredByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Labs.LabBookingItem", "LabBookingItem")
+                        .WithMany()
+                        .HasForeignKey("LabBookingItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HealthCareMS.Domain.Labs.LabSampleBooking", "LabSampleBooking")
+                        .WithMany("Results")
+                        .HasForeignKey("LabSampleBookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HealthCareMS.Domain.Labs.LabTest", "LabTest")
+                        .WithMany()
+                        .HasForeignKey("LabTestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "ManagerValidatedByUser")
+                        .WithMany()
+                        .HasForeignKey("ManagerValidatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "ReleasedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReleasedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "TechnicianValidatedByUser")
+                        .WithMany()
+                        .HasForeignKey("TechnicianValidatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AddendumByUser");
+
+                    b.Navigation("CriticalAlertAcknowledgedByUser");
+
+                    b.Navigation("EnteredByUser");
+
+                    b.Navigation("LabBookingItem");
+
+                    b.Navigation("LabSampleBooking");
+
+                    b.Navigation("LabTest");
+
+                    b.Navigation("ManagerValidatedByUser");
+
+                    b.Navigation("ReleasedByUser");
+
+                    b.Navigation("TechnicianValidatedByUser");
                 });
 
             modelBuilder.Entity("HealthCareMS.Domain.Notifications.Notification", b =>
@@ -3287,6 +4075,73 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                         .IsRequired();
 
                     b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentInvoice", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Payments.PaymentTransaction", "PaymentTransaction")
+                        .WithOne("Invoice")
+                        .HasForeignKey("HealthCareMS.Domain.Payments.PaymentInvoice", "PaymentTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HealthCareMS.Domain.Pharmacy.PharmacyOrder", "PharmacyOrder")
+                        .WithMany()
+                        .HasForeignKey("PharmacyOrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Identity.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("PaymentTransaction");
+
+                    b.Navigation("PharmacyOrder");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentRefund", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Payments.PaymentInvoice", "PaymentInvoice")
+                        .WithMany("Refunds")
+                        .HasForeignKey("PaymentInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Payments.PaymentTransaction", "PaymentTransaction")
+                        .WithMany("Refunds")
+                        .HasForeignKey("PaymentTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HealthCareMS.Domain.Identity.ApplicationUser", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("PaymentInvoice");
+
+                    b.Navigation("PaymentTransaction");
+
+                    b.Navigation("RequestedByUser");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentTransaction", b =>
+                {
+                    b.HasOne("HealthCareMS.Domain.Pharmacy.PharmacyOrder", "PharmacyOrder")
+                        .WithMany()
+                        .HasForeignKey("PharmacyOrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HealthCareMS.Domain.Identity.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("PharmacyOrder");
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("HealthCareMS.Domain.Pharmacy.Medicine", b =>
@@ -3572,6 +4427,8 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
             modelBuilder.Entity("HealthCareMS.Domain.Labs.LabSampleBooking", b =>
                 {
                     b.Navigation("Items");
+
+                    b.Navigation("Results");
                 });
 
             modelBuilder.Entity("HealthCareMS.Domain.Patients.Patient", b =>
@@ -3579,6 +4436,18 @@ namespace HealthCareMS.Infrastructure.Persistence.Migrations.Foundation
                     b.Navigation("MedicalHistory");
 
                     b.Navigation("Vitals");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentInvoice", b =>
+                {
+                    b.Navigation("Refunds");
+                });
+
+            modelBuilder.Entity("HealthCareMS.Domain.Payments.PaymentTransaction", b =>
+                {
+                    b.Navigation("Invoice");
+
+                    b.Navigation("Refunds");
                 });
 
             modelBuilder.Entity("HealthCareMS.Domain.Pharmacy.Medicine", b =>

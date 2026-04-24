@@ -20,7 +20,8 @@ public sealed record CreateConsultationLabOrderModel(
     string CollectionType,
     DateTimeOffset? CollectionScheduledAt,
     string? CollectionAddress,
-    string? Notes);
+    string? Notes,
+    DateTimeOffset? CollectionWindowEndAt);
 
 public sealed record LabBookingModel(
     Guid Id,
@@ -44,7 +45,16 @@ public sealed record LabBookingModel(
     decimal HomeCollectionFee,
     decimal TotalAmount,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<LabBookingItemModel> Items);
+    IReadOnlyList<LabBookingItemModel> Items,
+    DateTimeOffset? CollectionWindowEndAt,
+    Guid? CollectionAgentUserId,
+    string? CollectionAgentName,
+    DateTimeOffset? CollectionAssignedAt,
+    DateTimeOffset? CollectionStartedAt,
+    DateTimeOffset? SampleCollectedAt,
+    DateTimeOffset? ResultsReleasedAt,
+    DateTimeOffset? ReportGeneratedAt,
+    string? ReportVerificationCode);
 
 public sealed record LabBookingItemModel(
     Guid Id,
@@ -98,6 +108,8 @@ public sealed class LabBookingFormModel
 
     public DateTimeOffset? CollectionScheduledAt { get; set; }
 
+    public DateTimeOffset? CollectionWindowEndAt { get; set; }
+
     public string? CollectionAddress { get; set; }
 
     public string? Notes { get; set; }
@@ -109,6 +121,151 @@ public sealed class LabCheckInFormModel
 
     public string? Notes { get; set; }
 }
+
+public sealed class AssignLabCollectionAgentFormModel
+{
+    public Guid CollectionAgentUserId { get; set; }
+
+    public DateTimeOffset? CollectionScheduledAt { get; set; }
+
+    public DateTimeOffset? CollectionWindowEndAt { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+public sealed class StartLabCollectionFormModel
+{
+    public string? Notes { get; set; }
+}
+
+public sealed class MarkLabSampleCollectedFormModel
+{
+    public bool? FastingVerified { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+public sealed class LabResultParameterFormModel
+{
+    public string ParameterName { get; set; } = string.Empty;
+
+    public string Value { get; set; } = string.Empty;
+
+    public string? Unit { get; set; }
+
+    public decimal? ReferenceLow { get; set; }
+
+    public decimal? ReferenceHigh { get; set; }
+
+    public string? ReferenceText { get; set; }
+
+    public decimal? CriticalLow { get; set; }
+
+    public decimal? CriticalHigh { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+public sealed class UpsertLabTestResultFormModel
+{
+    public Guid LabBookingItemId { get; set; }
+
+    public string? Summary { get; set; }
+
+    public IReadOnlyList<LabResultParameterFormModel> Parameters { get; set; } = [];
+}
+
+public sealed class EnterLabResultsFormModel
+{
+    public IReadOnlyList<UpsertLabTestResultFormModel> Results { get; set; } = [];
+}
+
+public sealed class AcknowledgeLabCriticalAlertFormModel
+{
+    public string? AcknowledgementNote { get; set; }
+}
+
+public sealed class ValidateLabResultsFormModel
+{
+    public string Level { get; set; } = "Tech";
+
+    public string? Notes { get; set; }
+}
+
+public sealed class ReleaseLabResultsFormModel
+{
+    public string? Notes { get; set; }
+}
+
+public sealed class AddLabResultAddendumFormModel
+{
+    public string AddendumNotes { get; set; } = string.Empty;
+}
+
+public sealed record LabResultParameterModel(
+    string ParameterName,
+    string Value,
+    string? Unit,
+    decimal? ReferenceLow,
+    decimal? ReferenceHigh,
+    string? ReferenceText,
+    bool IsAbnormal,
+    bool IsCritical,
+    string? Notes);
+
+public sealed record LabTestResultModel(
+    Guid Id,
+    Guid LabSampleBookingId,
+    Guid LabBookingItemId,
+    Guid LabTestId,
+    string ResultNumber,
+    string TestCode,
+    string TestName,
+    string Status,
+    string? Summary,
+    bool IsAbnormal,
+    bool HasCriticalValue,
+    string? CriticalValueSummary,
+    DateTimeOffset? EnteredAt,
+    DateTimeOffset? TechnicianValidatedAt,
+    DateTimeOffset? ManagerValidatedAt,
+    DateTimeOffset? ReleasedAt,
+    DateTimeOffset? CriticalAlertSentAt,
+    DateTimeOffset? CriticalAlertAcknowledgedAt,
+    string? AddendumNotes,
+    DateTimeOffset? AddendumAt,
+    IReadOnlyList<LabResultParameterModel> Parameters);
+
+public sealed record LabValidationQueueItemModel(
+    Guid BookingId,
+    string BookingNumber,
+    Guid PatientId,
+    string PatientName,
+    string BookingStatus,
+    bool HasCriticalValue,
+    bool HasAbnormalResult,
+    int PendingTechValidationCount,
+    int PendingManagerValidationCount,
+    int ReleasableCount,
+    DateTimeOffset CreatedAt);
+
+public sealed record LabBookingResultSummaryModel(
+    Guid BookingId,
+    string BookingNumber,
+    string PatientName,
+    string Status,
+    DateTimeOffset? ResultsReleasedAt,
+    string? ReportVerificationCode,
+    IReadOnlyList<LabTestResultModel> Results);
+
+public sealed record LabReportVerificationModel(
+    Guid BookingId,
+    string BookingNumber,
+    string PatientName,
+    bool IsVerified,
+    string Status,
+    DateTimeOffset? ReleasedAt,
+    IReadOnlyList<string> TestNames);
 
 public sealed record ConsultationSummaryModel(
     Guid AppointmentId,

@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
+using System.Text;
 using HealthCareMS.Application.Abstractions.Authentication;
 using HealthCareMS.Application.Auth;
 using HealthCareMS.Domain.Identity;
 using HealthCareMS.Infrastructure.Persistence;
+using HealthCareMS.Infrastructure.Security;
 using HealthCareMS.Shared.Common;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,34 +29,59 @@ public sealed class AuthService(
 
         if (user is null || !passwordHasher.Verify(request.Password, user.PasswordHash))
         {
+            await RecordLoginAttemptAsync(user?.Id, email, false, "Invalid credentials", cancellationToken);
             return Result<LoginResponse>.Failure(new Error("AUTH_INVALID_CREDENTIALS", "Invalid email or password."));
         }
 
         if (!user.IsActive)
         {
+            await RecordLoginAttemptAsync(user.Id, email, false, "Account disabled", cancellationToken);
             return Result<LoginResponse>.Failure(new Error("AUTH_ACCOUNT_INACTIVE", "Account is disabled."));
         }
 
         if (user.LockoutUntil.HasValue && user.LockoutUntil.Value > DateTimeOffset.UtcNow)
         {
+            await RecordLoginAttemptAsync(user.Id, email, false, "Account locked", cancellationToken);
             return Result<LoginResponse>.Failure(new Error("AUTH_ACCOUNT_LOCKED", "Account is temporarily locked."));
         }
 
         if (!user.IsEmailVerified)
         {
+            await RecordLoginAttemptAsync(user.Id, email, false, "Email not verified", cancellationToken);
             return Result<LoginResponse>.Failure(new Error("AUTH_EMAIL_NOT_VERIFIED", "Email is not verified."));
+        }
+
+        if (user.TwoFactorEnabled && !TotpUtility.ValidateCode(user.TwoFactorSecret ?? string.Empty, request.TwoFactorCode ?? string.Empty))
+        {
+            await RecordLoginAttemptAsync(user.Id, email, false, "Two-factor validation failed", cancellationToken);
+            return Result<LoginResponse>.Failure(new Error("AUTH_2FA_INVALID", "Two-factor authentication code is invalid."));
         }
 
         var permissions = ResolvePermissions(user);
         var accessToken = jwtTokenService.CreateAccessToken(user, permissions);
         var refreshToken = CreateRefreshToken();
+        var refreshTokenHash = HashToken(refreshToken);
+        var now = DateTimeOffset.UtcNow;
 
-        user.LastLoginAt = DateTimeOffset.UtcNow;
+        user.LastLoginAt = now;
         user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiry = DateTimeOffset.UtcNow.AddDays(7);
+        user.RefreshTokenExpiry = now.AddDays(7);
         user.FailedLoginCount = 0;
 
+        dbContext.UserAuthSessions.Add(new UserAuthSession
+        {
+            UserId = user.Id,
+            RefreshTokenHash = refreshTokenHash,
+            IssuedAt = now,
+            ExpiresAt = user.RefreshTokenExpiry.Value,
+            LastSeenAt = now,
+            IpAddress = null,
+            UserAgent = null,
+            DeviceLabel = "Web Session"
+        });
+
         await dbContext.SaveChangesAsync(cancellationToken);
+        await RecordLoginAttemptAsync(user.Id, email, true, failureReason: null, cancellationToken);
 
         var response = new LoginResponse(
             accessToken.AccessToken,
@@ -70,6 +97,13 @@ public sealed class AuthService(
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
         {
             return Result<LoginResponse>.Failure(new Error("AUTH_REFRESH_TOKEN_INVALID", "Refresh token is required."));
+        }
+
+        var session = await dbContext.UserAuthSessions
+            .SingleOrDefaultAsync(x => x.RefreshTokenHash == HashToken(request.RefreshToken) && x.RevokedAt == null, cancellationToken);
+        if (session is null || session.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            return Result<LoginResponse>.Failure(new Error("AUTH_REFRESH_TOKEN_INVALID", "Refresh token is invalid or expired."));
         }
 
         var user = await dbContext.Users
@@ -93,9 +127,13 @@ public sealed class AuthService(
         var permissions = ResolvePermissions(user);
         var accessToken = jwtTokenService.CreateAccessToken(user, permissions);
         var refreshToken = CreateRefreshToken();
+        var now = DateTimeOffset.UtcNow;
 
         user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiry = DateTimeOffset.UtcNow.AddDays(7);
+        user.RefreshTokenExpiry = now.AddDays(7);
+        session.RefreshTokenHash = HashToken(refreshToken);
+        session.ExpiresAt = user.RefreshTokenExpiry.Value;
+        session.LastSeenAt = now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -122,8 +160,15 @@ public sealed class AuthService(
         user.RefreshToken = null;
         user.RefreshTokenExpiry = null;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var sessions = await dbContext.UserAuthSessions
+            .Where(x => x.UserId == request.UserId && x.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = DateTimeOffset.UtcNow;
+        }
 
+        await dbContext.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 
@@ -150,5 +195,31 @@ public sealed class AuthService(
     private static string CreateRefreshToken()
     {
         return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+    }
+
+    private static string HashToken(string value)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    }
+
+    private async Task RecordLoginAttemptAsync(
+        Guid? userId,
+        string email,
+        bool isSuccessful,
+        string? failureReason,
+        CancellationToken cancellationToken)
+    {
+        dbContext.UserLoginActivities.Add(new UserLoginActivity
+        {
+            UserId = userId,
+            Email = email,
+            IsSuccessful = isSuccessful,
+            AttemptedAt = DateTimeOffset.UtcNow,
+            IpAddress = null,
+            UserAgent = null,
+            FailureReason = failureReason
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }

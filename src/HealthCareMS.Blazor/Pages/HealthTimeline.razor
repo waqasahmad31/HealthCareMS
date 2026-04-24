@@ -1,0 +1,138 @@
+@page "/timeline"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.JSInterop
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Health Timeline</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S31 Timeline</p>
+        <h1>Patient Health Timeline</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadTimelineAsync">Load</button>
+        <button class="secondary-button" type="button" @onclick="DownloadHealthSummaryAsync">Summary PDF</button>
+        <button class="primary-button" type="button" @onclick="DownloadEmergencyCardAsync">Emergency QR</button>
+    </div>
+</section>
+
+<section class="panel entity-form">
+    <label>Patient Id<InputText @bind-Value="PatientIdText" /></label>
+    <label>
+        Filter
+        <InputSelect @bind-Value="Filter">
+            <option value="">All</option>
+            <option value="appointment">Appointments</option>
+            <option value="vitals">Vitals</option>
+            <option value="lab">Lab</option>
+            <option value="pharmacy">Pharmacy</option>
+            <option value="dispense">Dispense</option>
+        </InputSelect>
+    </label>
+</section>
+
+@if (Timeline is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card"><span class="metric-label">Patient</span><strong>@Timeline.PatientName</strong><span class="tone-blue">@Timeline.BloodGroup</span></article>
+        <article class="metric-card"><span class="metric-label">Entries</span><strong>@Timeline.Entries.Count</strong><span class="tone-green">chronological</span></article>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header"><h2>Timeline</h2><span class="status-pill blue">@Timeline.Entries.Count</span></div>
+        <div class="queue-list">
+            @foreach (var entry in Timeline.Entries)
+            {
+                <div class="queue-row">
+                    <div>
+                        <strong>@entry.Title</strong>
+                        <span>@entry.Description</span>
+                    </div>
+                    <span class="status-pill @(entry.Severity == "Critical" ? "amber" : "blue")">@entry.OccurredAt.ToString("yyyy-MM-dd HH:mm")</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private string PatientIdText { get; set; } = string.Empty;
+    private string Filter { get; set; } = string.Empty;
+    private PatientHealthTimelineModel? Timeline { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task LoadTimelineAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("Enter a valid patient id.", "tone-amber");
+            return;
+        }
+
+        var url = string.IsNullOrWhiteSpace(Filter)
+            ? $"api/v1/insights/patients/{patientId}/timeline"
+            : $"api/v1/insights/patients/{patientId}/timeline?filter={Uri.EscapeDataString(Filter)}";
+        var result = await ApiClient.GetAsync<PatientHealthTimelineModel>(url);
+        if (result?.Success == true && result.Data is not null)
+        {
+            Timeline = result.Data;
+            SetStatus("Health timeline loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Timeline unavailable.", "tone-amber");
+    }
+
+    private async Task DownloadHealthSummaryAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("Enter a valid patient id.", "tone-amber");
+            return;
+        }
+
+        var download = await ApiClient.DownloadFileAsync($"api/v1/insights/patients/{patientId}/health-summary.pdf");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Health summary download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.downloadFile", download.FileName, download.ContentType, Convert.ToBase64String(download.Content));
+        SetStatus("Health summary downloaded.", "tone-green");
+    }
+
+    private async Task DownloadEmergencyCardAsync()
+    {
+        if (!Guid.TryParse(PatientIdText, out var patientId))
+        {
+            SetStatus("Enter a valid patient id.", "tone-amber");
+            return;
+        }
+
+        var download = await ApiClient.DownloadFileAsync($"api/v1/insights/patients/{patientId}/emergency-card.pdf");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Emergency card download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.downloadFile", download.FileName, download.ContentType, Convert.ToBase64String(download.Content));
+        SetStatus("Emergency card downloaded.", "tone-green");
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

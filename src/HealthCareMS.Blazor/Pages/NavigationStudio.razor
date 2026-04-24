@@ -107,7 +107,7 @@
             </div>
         </div>
 
-        @if (PreviewGroups.Count == 0)
+        @if (!PreviewGroups.Any())
         {
             <div class="empty-state">Select menus to preview the effective tree.</div>
         }

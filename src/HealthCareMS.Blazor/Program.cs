@@ -9,10 +9,12 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var apiBaseAddress = builder.Configuration["ApiBaseAddress"];
+var apiBaseAddress =
+    builder.Configuration["ApplicationLinks:ApiBaseUrl"]
+    ?? builder.Configuration["ApiBaseAddress"];
 if (string.IsNullOrWhiteSpace(apiBaseAddress))
 {
-    throw new InvalidOperationException("Configuration key 'ApiBaseAddress' is required.");
+    throw new InvalidOperationException("Configuration key 'ApplicationLinks:ApiBaseUrl' is required.");
 }
 
 var apiEndpoints = new ApiEndpointOptions(apiBaseAddress);

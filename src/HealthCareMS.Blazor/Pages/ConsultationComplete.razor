@@ -562,7 +562,8 @@
                 LabOrderCollectionType,
                 null,
                 string.IsNullOrWhiteSpace(LabCollectionAddress) ? null : LabCollectionAddress,
-                "Ordered from consultation"));
+                "Ordered from consultation",
+                null));
         IsBusy = false;
 
         if (result?.Success == true && result.Data is not null)

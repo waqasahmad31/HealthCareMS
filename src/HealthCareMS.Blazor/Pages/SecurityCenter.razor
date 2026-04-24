@@ -1,0 +1,171 @@
+@page "/security"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Security Center</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S34 Security</p>
+        <h1>Sessions, Login History & 2FA</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadAsync">Refresh</button>
+        <button class="secondary-button" type="button" @onclick="BeginSetupAsync">2FA Setup</button>
+        <button class="primary-button" type="button" @onclick="EnableTwoFactorAsync">Enable 2FA</button>
+    </div>
+</section>
+
+@if (Overview is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card"><span class="metric-label">2FA</span><strong>@(Overview.TwoFactorEnabled ? "Enabled" : "Disabled")</strong><span class="tone-blue">TOTP</span></article>
+        <article class="metric-card"><span class="metric-label">Active Sessions</span><strong>@Overview.ActiveSessionCount</strong><span class="tone-green">tracked</span></article>
+        <article class="metric-card"><span class="metric-label">Failed Logins</span><strong>@Overview.FailedLoginCount</strong><span class="tone-amber">audited</span></article>
+        <article class="metric-card"><span class="metric-label">Last Login</span><strong>@(Overview.LastLoginAt?.ToString("yyyy-MM-dd HH:mm") ?? "Unknown")</strong><span class="tone-muted">utc</span></article>
+    </section>
+}
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header"><h2>Two-Factor Setup</h2><span class="status-pill blue">TOTP</span></div>
+        <div class="entity-form">
+            <label>Verification Code<InputText @bind-Value="EnableForm.VerificationCode" /></label>
+            @if (Setup is not null)
+            {
+                <label>Secret<input value="@Setup.SecretKey" readonly /></label>
+                <label>OTP URI<textarea readonly>@Setup.OtpAuthUri</textarea></label>
+            }
+        </div>
+        <div class="header-actions">
+            <button class="secondary-button" type="button" @onclick="BeginSetupAsync">Generate Secret</button>
+            <button class="secondary-button" type="button" @onclick="DisableTwoFactorAsync">Disable 2FA</button>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Active Sessions</h2><span class="status-pill green">@Sessions.Count</span></div>
+        @foreach (var session in Sessions)
+        {
+            <div class="queue-row">
+                <div><strong>@(session.DeviceLabel ?? "Session")</strong><span>@session.IssuedAt.ToString("yyyy-MM-dd HH:mm")</span></div>
+                <button class="secondary-button small-button" type="button" @onclick="() => RevokeAsync(session.Id)">Revoke</button>
+            </div>
+        }
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-header"><h2>Login History</h2><span class="status-pill amber">@History.Count</span></div>
+    @foreach (var entry in History.Take(20))
+    {
+        <div class="queue-row">
+            <div><strong>@(entry.IsSuccessful ? "Successful login" : "Failed login")</strong><span>@(entry.FailureReason ?? entry.Email)</span></div>
+            <span class="status-pill @(entry.IsSuccessful ? "green" : "amber")">@entry.AttemptedAt.ToString("yyyy-MM-dd HH:mm")</span>
+        </div>
+    }
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private SecurityOverviewModel? Overview { get; set; }
+    private IReadOnlyList<UserAuthSessionModel> Sessions { get; set; } = [];
+    private IReadOnlyList<LoginActivityModel> History { get; set; } = [];
+    private TwoFactorSetupModel? Setup { get; set; }
+    private EnableTwoFactorFormModel EnableForm { get; set; } = new();
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var overview = await ApiClient.GetAsync<SecurityOverviewModel>("api/v1/security/overview");
+        var sessions = await ApiClient.GetAsync<IReadOnlyList<UserAuthSessionModel>>("api/v1/security/active-sessions");
+        var history = await ApiClient.GetAsync<IReadOnlyList<LoginActivityModel>>("api/v1/security/login-history");
+
+        if (overview?.Success == true && overview.Data is not null)
+        {
+            Overview = overview.Data;
+        }
+
+        if (sessions?.Success == true && sessions.Data is not null)
+        {
+            Sessions = sessions.Data;
+        }
+
+        if (history?.Success == true && history.Data is not null)
+        {
+            History = history.Data;
+        }
+
+        SetStatus("Security center refreshed.", "tone-green");
+    }
+
+    private async Task BeginSetupAsync()
+    {
+        var result = await ApiClient.PostAsync<TwoFactorSetupModel>("api/v1/security/2fa/setup");
+        if (result?.Success == true && result.Data is not null)
+        {
+            Setup = result.Data;
+            SetStatus("2FA secret generated.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "2FA setup failed.", "tone-amber");
+    }
+
+    private async Task EnableTwoFactorAsync()
+    {
+        var result = await ApiClient.PostAsync<EnableTwoFactorFormModel, TwoFactorSetupModel>("api/v1/security/2fa/enable", EnableForm);
+        if (result?.Success == true && result.Data is not null)
+        {
+            Setup = result.Data;
+            await LoadAsync();
+            SetStatus("Two-factor authentication enabled.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "2FA enable failed.", "tone-amber");
+    }
+
+    private async Task DisableTwoFactorAsync()
+    {
+        var result = await ApiClient.PostAsync<SecurityOverviewModel>("api/v1/security/2fa/disable");
+        if (result?.Success == true)
+        {
+            await LoadAsync();
+            SetStatus("Two-factor authentication disabled.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "2FA disable failed.", "tone-amber");
+    }
+
+    private async Task RevokeAsync(Guid sessionId)
+    {
+        var result = await ApiClient.PostAsync<UserAuthSessionModel>($"api/v1/security/active-sessions/{sessionId}/revoke");
+        if (result?.Success == true)
+        {
+            await LoadAsync();
+            SetStatus("Session revoked.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Session revoke failed.", "tone-amber");
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

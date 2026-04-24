@@ -5,12 +5,15 @@ using HealthCareMS.Application.Admin;
 using HealthCareMS.Application.Consultations;
 using HealthCareMS.Application.Doctors;
 using HealthCareMS.Application.Identity;
+using HealthCareMS.Application.Insights;
 using HealthCareMS.Application.Labs;
 using HealthCareMS.Application.Notifications;
 using HealthCareMS.Application.Patients;
+using HealthCareMS.Application.Payments;
 using HealthCareMS.Application.Pharmacy;
 using HealthCareMS.Application.Portals;
 using HealthCareMS.Application.Queues;
+using HealthCareMS.Application.Security;
 using HealthCareMS.Application.Tenants;
 using HealthCareMS.Infrastructure.Authentication;
 using HealthCareMS.Infrastructure.Appointments;
@@ -19,14 +22,17 @@ using HealthCareMS.Infrastructure.Consultations;
 using HealthCareMS.Infrastructure.Caching;
 using HealthCareMS.Infrastructure.Doctors;
 using HealthCareMS.Infrastructure.Identity;
+using HealthCareMS.Infrastructure.Insights;
 using HealthCareMS.Infrastructure.Labs;
 using HealthCareMS.Infrastructure.Notifications;
 using HealthCareMS.Infrastructure.Patients;
+using HealthCareMS.Infrastructure.Payments;
 using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Infrastructure.Pharmacy;
 using HealthCareMS.Infrastructure.Portals;
 using HealthCareMS.Infrastructure.Queues;
+using HealthCareMS.Infrastructure.Security;
 using HealthCareMS.Infrastructure.Seed;
 using HealthCareMS.Infrastructure.Tenants;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +65,8 @@ public static class DependencyInjection
             configuration.GetSection(PrescriptionDocumentOptions.SectionName).Bind(options));
         services.Configure<ApplicationLinkOptions>(options =>
             configuration.GetSection(ApplicationLinkOptions.SectionName).Bind(options));
+        services.Configure<PaymentGatewayOptions>(options =>
+            configuration.GetSection(PaymentGatewayOptions.SectionName).Bind(options));
 
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<HealthCareDbContext>());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -70,7 +78,10 @@ public static class DependencyInjection
         services.AddScoped<IDoctorReviewService, DoctorReviewService>();
         services.AddScoped<ILabService, LabService>();
         services.AddScoped<IPharmacyService, PharmacyService>();
+        services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IInsightService, InsightService>();
         services.AddScoped<IIdentityManagementService, IdentityManagementService>();
+        services.AddScoped<ISecurityCenterService, SecurityCenterService>();
         services.AddScoped<IAppointmentService, AppointmentService>();
         services.AddScoped<IAdminOperationsService, AdminOperationsService>();
         services.AddScoped<IConsultationService, ConsultationService>();

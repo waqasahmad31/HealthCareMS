@@ -45,7 +45,9 @@ public sealed class LabSampleBookingConfiguration : IEntityTypeConfiguration<Lab
         builder.Property(x => x.CollectionAddress).HasMaxLength(4000);
         builder.Property(x => x.SampleBarcode).HasMaxLength(120);
         builder.Property(x => x.TokenNumber).HasMaxLength(35);
+        builder.Property(x => x.ReportVerificationCode).HasMaxLength(80);
         builder.Property(x => x.Notes).HasMaxLength(1000);
+        builder.Property(x => x.CollectionStatusNotes).HasMaxLength(1000);
         builder.Property(x => x.SubTotal).HasPrecision(12, 2);
         builder.Property(x => x.HomeCollectionFee).HasPrecision(12, 2);
         builder.Property(x => x.TotalAmount).HasPrecision(12, 2);
@@ -55,6 +57,8 @@ public sealed class LabSampleBookingConfiguration : IEntityTypeConfiguration<Lab
         builder.HasIndex(x => x.PatientId);
         builder.HasIndex(x => x.SampleBarcode).IsUnique();
         builder.HasIndex(x => x.TokenNumber);
+        builder.HasIndex(x => x.CollectionAgentUserId);
+        builder.HasIndex(x => x.ReportVerificationCode);
         builder.HasQueryFilter(x => !x.IsDeleted);
 
         builder
@@ -79,6 +83,12 @@ public sealed class LabSampleBookingConfiguration : IEntityTypeConfiguration<Lab
             .HasOne(x => x.Prescription)
             .WithMany()
             .HasForeignKey(x => x.PrescriptionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.CollectionAgentUser)
+            .WithMany()
+            .HasForeignKey(x => x.CollectionAgentUserId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -154,6 +164,83 @@ public sealed class LabPanelItemConfiguration : IEntityTypeConfiguration<LabPane
             .HasOne(x => x.LabTest)
             .WithMany()
             .HasForeignKey(x => x.LabTestId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class LabTestResultConfiguration : IEntityTypeConfiguration<LabTestResult>
+{
+    public void Configure(EntityTypeBuilder<LabTestResult> builder)
+    {
+        builder.ToTable("LabTestResults", DatabaseSchemas.Lab);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.ResultNumber).HasMaxLength(35).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
+        builder.Property(x => x.ParametersJson).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb").IsRequired();
+        builder.Property(x => x.Summary).HasMaxLength(2000);
+        builder.Property(x => x.CriticalValueSummary).HasMaxLength(1000);
+        builder.Property(x => x.AddendumNotes).HasMaxLength(2000);
+
+        builder.HasIndex(x => x.ResultNumber).IsUnique();
+        builder.HasIndex(x => x.LabSampleBookingId);
+        builder.HasIndex(x => x.LabBookingItemId).IsUnique();
+        builder.HasIndex(x => x.LabTestId);
+        builder.HasIndex(x => new { x.Status, x.HasCriticalValue, x.IsAbnormal });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.LabSampleBooking)
+            .WithMany(x => x.Results)
+            .HasForeignKey(x => x.LabSampleBookingId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder
+            .HasOne(x => x.LabBookingItem)
+            .WithMany()
+            .HasForeignKey(x => x.LabBookingItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.LabTest)
+            .WithMany()
+            .HasForeignKey(x => x.LabTestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.EnteredByUser)
+            .WithMany()
+            .HasForeignKey(x => x.EnteredByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.TechnicianValidatedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.TechnicianValidatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.ManagerValidatedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.ManagerValidatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.ReleasedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.ReleasedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.CriticalAlertAcknowledgedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.CriticalAlertAcknowledgedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasOne(x => x.AddendumByUser)
+            .WithMany()
+            .HasForeignKey(x => x.AddendumByUserId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

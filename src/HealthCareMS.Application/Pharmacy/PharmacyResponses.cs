@@ -205,3 +205,66 @@ public sealed record PharmacyOrderResponse(
     decimal DeliveryFee,
     decimal TotalAmount,
     IReadOnlyList<PharmacyOrderItemResponse> Items);
+
+public sealed record PharmacySalesPointResponse(
+    DateOnly Date,
+    decimal Revenue,
+    int Orders,
+    int Dispenses);
+
+public sealed record TopMedicineReportResponse(
+    Guid MedicineId,
+    string MedicineName,
+    int QuantitySold,
+    decimal Revenue);
+
+public sealed record StockValuationReportResponse(
+    Guid MedicineId,
+    string MedicineName,
+    int StockOnHand,
+    decimal UnitCostPrice,
+    decimal StockValue,
+    DateOnly? NearestExpiryDate);
+
+public sealed record ExpiryReportResponse(
+    Guid StockBatchId,
+    Guid MedicineId,
+    string MedicineName,
+    string BatchNumber,
+    DateOnly ExpiryDate,
+    int QuantityOnHand,
+    int DaysToExpiry,
+    decimal PotentialLoss,
+    string Severity);
+
+public sealed record ReconciliationReportResponse(
+    Guid PaymentTransactionId,
+    string PaymentNumber,
+    string Gateway,
+    string PaymentStatus,
+    decimal PaidAmount,
+    decimal RefundedAmount,
+    decimal NetAmount,
+    DateTimeOffset? PaidAt,
+    string? OrderNumber,
+    string? InvoiceNumber,
+    string ReconciliationStatus);
+
+public sealed record PharmacyReportsDashboardResponse(
+    DateOnly From,
+    DateOnly To,
+    decimal TotalRevenue,
+    decimal TotalRefunded,
+    int TotalOrders,
+    int TotalDispenses,
+    decimal StockValuation,
+    IReadOnlyList<PharmacySalesPointResponse> SalesByPeriod,
+    IReadOnlyList<TopMedicineReportResponse> TopMedicines,
+    IReadOnlyList<StockValuationReportResponse> StockValuationItems,
+    IReadOnlyList<ExpiryReportResponse> ExpiryItems,
+    IReadOnlyList<ReconciliationReportResponse> ReconciliationItems);
+
+public sealed record ReportExportResponse(
+    byte[] Content,
+    string FileName,
+    string ContentType);

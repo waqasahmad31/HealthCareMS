@@ -21,10 +21,12 @@ public sealed class LabAndPharmacyServiceTests
     {
         await using var dbContext = CreateDbContext();
         var appointment = await SeedAppointmentAsync(dbContext);
-        var labService = new LabService(dbContext);
+        var queryCache = new TestDistributedQueryCache();
+        var labService = new LabService(dbContext, queryCache);
         var consultationService = new ConsultationService(
             dbContext,
             new QuestPdfPrescriptionDocumentService(),
+            null,
             null,
             new QuestPdfConsultationSummaryDocumentService());
 
@@ -60,7 +62,7 @@ public sealed class LabAndPharmacyServiceTests
     public async Task PharmacyService_ShouldCreateMedicineBatchAndImportCsv()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PharmacyService(dbContext);
+        var service = new PharmacyService(dbContext, new TestDistributedQueryCache());
 
         var medicine = await service.CreateMedicineAsync(
             new CreateMedicineRequest(
@@ -110,7 +112,7 @@ public sealed class LabAndPharmacyServiceTests
         await using var dbContext = CreateDbContext();
         var appointment = await SeedAppointmentAsync(dbContext);
         var consultationService = new ConsultationService(dbContext, new QuestPdfPrescriptionDocumentService());
-        var pharmacyService = new PharmacyService(dbContext);
+        var pharmacyService = new PharmacyService(dbContext, new TestDistributedQueryCache());
 
         var complete = await consultationService.CompleteAsync(
             appointment.Id,
@@ -188,7 +190,7 @@ public sealed class LabAndPharmacyServiceTests
     {
         await using var dbContext = CreateDbContext();
         var appointment = await SeedAppointmentAsync(dbContext);
-        var pharmacyService = new PharmacyService(dbContext);
+        var pharmacyService = new PharmacyService(dbContext, new TestDistributedQueryCache());
         var deliveryRole = new Role { Name = $"Delivery-{Guid.NewGuid():N}", IsSystemRole = true };
         var deliveryAgent = new ApplicationUser
         {
@@ -275,7 +277,7 @@ public sealed class LabAndPharmacyServiceTests
     public async Task LabService_ShouldSeedLargeCatalogueImportCsvAndCreatePanel()
     {
         await using var dbContext = CreateDbContext();
-        var service = new LabService(dbContext);
+        var service = new LabService(dbContext, new TestDistributedQueryCache());
 
         var tests = await service.SearchTestsAsync(null, CancellationToken.None);
         var csv = """
@@ -310,7 +312,7 @@ public sealed class LabAndPharmacyServiceTests
     {
         await using var dbContext = CreateDbContext();
         var appointment = await SeedAppointmentAsync(dbContext);
-        var service = new LabService(dbContext);
+        var service = new LabService(dbContext, new TestDistributedQueryCache());
         var tests = await service.SearchTestsAsync("cbc", CancellationToken.None);
 
         var booking = await service.CreateBookingAsync(

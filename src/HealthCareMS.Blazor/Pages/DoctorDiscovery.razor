@@ -1,0 +1,110 @@
+@page "/doctor-discovery"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Doctor Discovery</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S33 Recommendations</p>
+        <h1>Best Match Doctor Discovery</h1>
+    </div>
+    <div class="header-actions">
+        <button class="primary-button" type="button" @onclick="LoadAsync">Find Best Match</button>
+    </div>
+</section>
+
+<section class="panel entity-form">
+    <label>Patient Id<InputText @bind-Value="PatientIdText" /></label>
+    <label>Specialization<InputText @bind-Value="Specialization" /></label>
+    <label>City<InputText @bind-Value="City" /></label>
+    <label>Max Fee<InputNumber @bind-Value="MaxFee" /></label>
+    <label>Date<input type="date" value="@DateText" @onchange="OnDateChanged" /></label>
+    <label>
+        Appointment Type
+        <InputSelect @bind-Value="AppointmentType">
+            <option>Online</option>
+            <option>OnSite</option>
+        </InputSelect>
+    </label>
+</section>
+
+<section class="panel">
+    <div class="panel-header"><h2>Recommendations</h2><span class="status-pill blue">@Recommendations.Count</span></div>
+    @foreach (var item in Recommendations)
+    {
+        <div class="queue-row">
+            <div>
+                <strong>@item.Doctor.FullName (@item.Doctor.Specialization)</strong>
+                <span>@string.Join(" | ", item.MatchReasons)</span>
+            </div>
+            <span class="status-pill @(item.IsBestMatch ? "green" : "blue")">@item.MatchScore.ToString("0.0")</span>
+        </div>
+    }
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private string PatientIdText { get; set; } = string.Empty;
+    private string? Specialization { get; set; }
+    private string? City { get; set; }
+    private decimal? MaxFee { get; set; }
+    private DateOnly? TargetDate { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(1));
+    private string AppointmentType { get; set; } = "Online";
+    private IReadOnlyList<DoctorRecommendationModel> Recommendations { get; set; } = [];
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+    private string DateText => TargetDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private async Task LoadAsync()
+    {
+        var query = new List<string>();
+        if (Guid.TryParse(PatientIdText, out var patientId))
+        {
+            query.Add($"patientId={patientId}");
+        }
+        if (!string.IsNullOrWhiteSpace(Specialization))
+        {
+            query.Add($"specialization={Uri.EscapeDataString(Specialization)}");
+        }
+        if (!string.IsNullOrWhiteSpace(City))
+        {
+            query.Add($"city={Uri.EscapeDataString(City)}");
+        }
+        if (MaxFee.HasValue)
+        {
+            query.Add($"maxFee={MaxFee.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+        if (TargetDate.HasValue)
+        {
+            query.Add($"date={TargetDate:yyyy-MM-dd}");
+        }
+        query.Add($"appointmentType={Uri.EscapeDataString(AppointmentType)}");
+
+        var result = await ApiClient.GetAsync<IReadOnlyList<DoctorRecommendationModel>>($"api/v1/doctors/recommendations?{string.Join("&", query)}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            Recommendations = result.Data;
+            SetStatus("Doctor recommendations loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor recommendations unavailable.", "tone-amber");
+    }
+
+    private void OnDateChanged(ChangeEventArgs args)
+    {
+        TargetDate = DateOnly.TryParse(args.Value?.ToString(), out var parsed) ? parsed : null;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

@@ -220,6 +220,35 @@ public sealed class PharmacyController(IPharmacyService pharmacyService) : ApiCo
         return FromResult(result);
     }
 
+    [HttpGet("reports")]
+    [RequirePermission(PermissionKeys.Pharmacy.ReportsView)]
+    public async Task<IActionResult> GetReports(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var result = await pharmacyService.GetReportsAsync(from, to, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("reports/export")]
+    [RequirePermission(PermissionKeys.Pharmacy.ReportsView)]
+    public async Task<IActionResult> ExportReport(
+        [FromQuery] string reportType,
+        [FromQuery] string format = "pdf",
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await pharmacyService.ExportReportAsync(reportType, from, to, format, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
+    }
+
     [HttpPost("medicines/import")]
     [RequirePermission(PermissionKeys.Pharmacy.MedicinesCreate)]
     [RequestSizeLimit(2 * 1024 * 1024)]

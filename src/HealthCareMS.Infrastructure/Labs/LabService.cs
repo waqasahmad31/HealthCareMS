@@ -1,7 +1,11 @@
 using System.Globalization;
+using System.Text.Json;
+using HealthCareMS.Application.Abstractions.Tenancy;
+using HealthCareMS.Application.Notifications;
 using HealthCareMS.Application.Labs;
 using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Labs;
+using HealthCareMS.Domain.Notifications;
 using HealthCareMS.Infrastructure.Caching;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Shared.Common;
@@ -12,9 +16,13 @@ using QuestPDF.Infrastructure;
 
 namespace HealthCareMS.Infrastructure.Labs;
 
-public sealed class LabService(
+public sealed partial class LabService(
     HealthCareDbContext dbContext,
-    IDistributedQueryCache queryCache) : ILabService
+    IDistributedQueryCache queryCache,
+    IEmailSender? emailSender = null,
+    ISmsSender? smsSender = null,
+    IInAppNotificationPublisher? inAppPublisher = null,
+    ICurrentUser? currentUser = null) : ILabService
 {
     private const int MinimumCatalogueSize = 120;
 
@@ -288,6 +296,7 @@ public sealed class LabService(
             CollectionType = collectionType,
             Status = LabBookingStatus.Ordered,
             CollectionScheduledAt = request.CollectionScheduledAt?.ToUniversalTime(),
+            CollectionWindowEndAt = request.CollectionWindowEndAt?.ToUniversalTime(),
             CollectionAddress = Normalize(request.CollectionAddress),
             SampleBarcode = GenerateSampleBarcode(patient.Id),
             TokenNumber = collectionType == LabCollectionType.OnSite
@@ -472,6 +481,7 @@ public sealed class LabService(
             CollectionType = collectionType,
             Status = LabBookingStatus.Ordered,
             CollectionScheduledAt = request.CollectionScheduledAt?.ToUniversalTime(),
+            CollectionWindowEndAt = request.CollectionWindowEndAt?.ToUniversalTime(),
             CollectionAddress = Normalize(request.CollectionAddress),
             SampleBarcode = GenerateSampleBarcode(appointmentId),
             TokenNumber = collectionType == LabCollectionType.OnSite
@@ -522,7 +532,10 @@ public sealed class LabService(
         return dbContext.LabSampleBookings
             .Include(x => x.Patient)
             .ThenInclude(x => x.User)
+            .Include(x => x.CollectionAgentUser)
             .Include(x => x.Items)
+            .ThenInclude(x => x.LabTest)
+            .Include(x => x.Results)
             .ThenInclude(x => x.LabTest);
     }
 
@@ -592,6 +605,13 @@ public sealed class LabService(
             errors.Add(new ValidationError(nameof(request.CollectionAddress), "CollectionAddress cannot exceed 4000 characters."));
         }
 
+        if (request.CollectionScheduledAt.HasValue
+            && request.CollectionWindowEndAt.HasValue
+            && request.CollectionWindowEndAt.Value <= request.CollectionScheduledAt.Value)
+        {
+            errors.Add(new ValidationError(nameof(request.CollectionWindowEndAt), "CollectionWindowEndAt must be after CollectionScheduledAt."));
+        }
+
         return errors;
     }
 
@@ -617,6 +637,13 @@ public sealed class LabService(
         if (!string.IsNullOrWhiteSpace(request.Notes) && request.Notes.Trim().Length > 1000)
         {
             errors.Add(new ValidationError(nameof(request.Notes), "Notes cannot exceed 1000 characters."));
+        }
+
+        if (request.CollectionScheduledAt.HasValue
+            && request.CollectionWindowEndAt.HasValue
+            && request.CollectionWindowEndAt.Value <= request.CollectionScheduledAt.Value)
+        {
+            errors.Add(new ValidationError(nameof(request.CollectionWindowEndAt), "CollectionWindowEndAt must be after CollectionScheduledAt."));
         }
 
         return errors;
@@ -818,7 +845,16 @@ public sealed class LabService(
             booking.Items
                 .OrderBy(x => x.LabTest.TestName)
                 .Select(Map)
-                .ToList());
+                .ToList(),
+            booking.CollectionWindowEndAt,
+            booking.CollectionAgentUserId,
+            booking.CollectionAgentUser?.FullName,
+            booking.CollectionAssignedAt,
+            booking.CollectionStartedAt,
+            booking.SampleCollectedAt,
+            booking.ResultsReleasedAt,
+            booking.ReportGeneratedAt,
+            booking.ReportVerificationCode);
     }
 
     private static LabBookingItemResponse Map(LabBookingItem item)

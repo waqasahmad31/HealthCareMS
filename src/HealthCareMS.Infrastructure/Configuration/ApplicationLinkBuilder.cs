@@ -38,7 +38,7 @@ public sealed class ApplicationLinkBuilder(ApplicationLinkOptions options) : IAp
             return baseUrl;
         }
 
-        return path.StartsWith('/', StringComparison.Ordinal)
+        return path.StartsWith("/", StringComparison.Ordinal)
             ? $"{baseUrl}{path}"
             : $"{baseUrl}/{path}";
     }

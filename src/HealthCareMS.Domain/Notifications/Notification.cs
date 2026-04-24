@@ -14,7 +14,9 @@ public enum NotificationType
 {
     AppointmentBooked = 1,
     AppointmentReminder24Hour = 2,
-    AppointmentReminder2Hour = 3
+    AppointmentReminder2Hour = 3,
+    LabCriticalValueAlert = 4,
+    LabResultReleased = 5
 }
 
 public enum NotificationStatus
@@ -61,4 +63,3 @@ public sealed class Notification : BaseEntity
 
     public Tenant? Tenant { get; set; }
 }
-

@@ -37,7 +37,16 @@ public sealed record LabBookingResponse(
     decimal HomeCollectionFee,
     decimal TotalAmount,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<LabBookingItemResponse> Items);
+    IReadOnlyList<LabBookingItemResponse> Items,
+    DateTimeOffset? CollectionWindowEndAt,
+    Guid? CollectionAgentUserId,
+    string? CollectionAgentName,
+    DateTimeOffset? CollectionAssignedAt,
+    DateTimeOffset? CollectionStartedAt,
+    DateTimeOffset? SampleCollectedAt,
+    DateTimeOffset? ResultsReleasedAt,
+    DateTimeOffset? ReportGeneratedAt,
+    string? ReportVerificationCode);
 
 public sealed record LabBookingItemResponse(
     Guid Id,
@@ -66,3 +75,73 @@ public sealed record LabBarcodeLabelPdfResponse(
     byte[] Content,
     string FileName,
     string ContentType);
+
+public sealed record LabResultParameterResponse(
+    string ParameterName,
+    string Value,
+    string? Unit,
+    decimal? ReferenceLow,
+    decimal? ReferenceHigh,
+    string? ReferenceText,
+    bool IsAbnormal,
+    bool IsCritical,
+    string? Notes);
+
+public sealed record LabTestResultResponse(
+    Guid Id,
+    Guid LabSampleBookingId,
+    Guid LabBookingItemId,
+    Guid LabTestId,
+    string ResultNumber,
+    string TestCode,
+    string TestName,
+    string Status,
+    string? Summary,
+    bool IsAbnormal,
+    bool HasCriticalValue,
+    string? CriticalValueSummary,
+    DateTimeOffset? EnteredAt,
+    DateTimeOffset? TechnicianValidatedAt,
+    DateTimeOffset? ManagerValidatedAt,
+    DateTimeOffset? ReleasedAt,
+    DateTimeOffset? CriticalAlertSentAt,
+    DateTimeOffset? CriticalAlertAcknowledgedAt,
+    string? AddendumNotes,
+    DateTimeOffset? AddendumAt,
+    IReadOnlyList<LabResultParameterResponse> Parameters);
+
+public sealed record LabValidationQueueItemResponse(
+    Guid BookingId,
+    string BookingNumber,
+    Guid PatientId,
+    string PatientName,
+    string BookingStatus,
+    bool HasCriticalValue,
+    bool HasAbnormalResult,
+    int PendingTechValidationCount,
+    int PendingManagerValidationCount,
+    int ReleasableCount,
+    DateTimeOffset CreatedAt);
+
+public sealed record LabReportPdfResponse(
+    byte[] Content,
+    string FileName,
+    string ContentType);
+
+public sealed record LabBookingResultSummaryResponse(
+    Guid BookingId,
+    string BookingNumber,
+    string PatientName,
+    string Status,
+    DateTimeOffset? ResultsReleasedAt,
+    string? ReportVerificationCode,
+    IReadOnlyList<LabTestResultResponse> Results);
+
+public sealed record LabReportVerificationResponse(
+    Guid BookingId,
+    string BookingNumber,
+    string PatientName,
+    bool IsVerified,
+    string Status,
+    DateTimeOffset? ReleasedAt,
+    IReadOnlyList<string> TestNames);

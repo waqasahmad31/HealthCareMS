@@ -1,0 +1,367 @@
+@page "/lab-workflow"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.JSInterop
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Lab Workflow</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S27-S30 Laboratory</p>
+        <h1>Home Collection, Results & Report Release</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadResultsAsync">Load Results</button>
+        <button class="secondary-button" type="button" @onclick="LoadQueueAsync">Validation Queue</button>
+        <button class="primary-button" type="button" @onclick="EnterResultsAsync">Save Results</button>
+    </div>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header"><h2>Home Collection Ops</h2><span class="status-pill blue">Agent Flow</span></div>
+        <div class="entity-form">
+            <label>Booking Id<InputText @bind-Value="BookingIdText" /></label>
+            <label>Agent User Id<InputText @bind-Value="AgentUserIdText" /></label>
+            <label>Start Window<input type="datetime-local" value="@CollectionStartText" @onchange="OnCollectionStartChanged" /></label>
+            <label>End Window<input type="datetime-local" value="@CollectionEndText" @onchange="OnCollectionEndChanged" /></label>
+        </div>
+        <div class="header-actions">
+            <button class="secondary-button" type="button" @onclick="AssignAgentAsync">Assign</button>
+            <button class="secondary-button" type="button" @onclick="StartCollectionAsync">Start</button>
+            <button class="secondary-button" type="button" @onclick="MarkCollectedAsync">Collected</button>
+            <button class="secondary-button" type="button" @onclick="DownloadReportAsync">Report PDF</button>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Result Entry</h2><span class="status-pill green">@PendingParameters.Count params</span></div>
+        <div class="entity-form">
+            <label>Booking Item Id<InputText @bind-Value="BookingItemIdText" /></label>
+            <label>Summary<InputTextArea @bind-Value="ResultSummary" /></label>
+            <label>Parameter<InputText @bind-Value="ParameterForm.ParameterName" /></label>
+            <label>Value<InputText @bind-Value="ParameterForm.Value" /></label>
+            <label>Unit<InputText @bind-Value="ParameterForm.Unit" /></label>
+            <label>Ref Low<InputNumber @bind-Value="ParameterForm.ReferenceLow" /></label>
+            <label>Ref High<InputNumber @bind-Value="ParameterForm.ReferenceHigh" /></label>
+            <label>Critical Low<InputNumber @bind-Value="ParameterForm.CriticalLow" /></label>
+            <label>Critical High<InputNumber @bind-Value="ParameterForm.CriticalHigh" /></label>
+            <button class="secondary-button" type="button" @onclick="AddParameter">Add Parameter</button>
+        </div>
+        @foreach (var parameter in PendingParameters)
+        {
+            <div class="queue-row">
+                <div><strong>@parameter.ParameterName</strong><span>@parameter.Value @parameter.Unit</span></div>
+                <button class="secondary-button small-button" type="button" @onclick="() => RemoveParameter(parameter)">Remove</button>
+            </div>
+        }
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header"><h2>Current Results</h2><span class="status-pill blue">@Results.Count</span></div>
+        @foreach (var result in Results)
+        {
+            <div class="queue-row">
+                <div>
+                    <strong>@result.TestName</strong>
+                    <span>@result.Status | @(result.HasCriticalValue ? "Critical" : result.IsAbnormal ? "Abnormal" : "Normal")</span>
+                </div>
+                <button class="secondary-button small-button" type="button" @onclick="() => AcknowledgeAsync(result.Id)">Acknowledge</button>
+            </div>
+        }
+        <div class="header-actions">
+            <button class="secondary-button" type="button" @onclick='() => ValidateAsync("Tech")'>Tech Validate</button>
+            <button class="secondary-button" type="button" @onclick='() => ValidateAsync("Manager")'>Manager Validate</button>
+            <button class="primary-button" type="button" @onclick="ReleaseAsync">Release Results</button>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Validation Queue</h2><span class="status-pill amber">@QueueItems.Count</span></div>
+        @foreach (var item in QueueItems)
+        {
+            <div class="queue-row">
+                <div><strong>@item.BookingNumber</strong><span>@item.PatientName | Tech @item.PendingTechValidationCount | Manager @item.PendingManagerValidationCount</span></div>
+                <span class="status-pill @(item.HasCriticalValue ? "amber" : "blue")">@item.BookingStatus</span>
+            </div>
+        }
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private string BookingIdText { get; set; } = string.Empty;
+    private string BookingItemIdText { get; set; } = string.Empty;
+    private string AgentUserIdText { get; set; } = string.Empty;
+    private string? ResultSummary { get; set; }
+    private LabResultParameterFormModel ParameterForm { get; set; } = new();
+    private List<LabResultParameterFormModel> PendingParameters { get; } = [];
+    private IReadOnlyList<LabTestResultModel> Results { get; set; } = [];
+    private IReadOnlyList<LabValidationQueueItemModel> QueueItems { get; set; } = [];
+    private DateTimeOffset? CollectionStart { get; set; }
+    private DateTimeOffset? CollectionEnd { get; set; }
+    private string CollectionStartText { get; set; } = string.Empty;
+    private string CollectionEndText { get; set; } = string.Empty;
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadQueueAsync();
+    }
+
+    private void AddParameter()
+    {
+        if (string.IsNullOrWhiteSpace(ParameterForm.ParameterName) || string.IsNullOrWhiteSpace(ParameterForm.Value))
+        {
+            SetStatus("Parameter name and value are required.", "tone-amber");
+            return;
+        }
+
+        PendingParameters.Add(new LabResultParameterFormModel
+        {
+            ParameterName = ParameterForm.ParameterName,
+            Value = ParameterForm.Value,
+            Unit = ParameterForm.Unit,
+            ReferenceLow = ParameterForm.ReferenceLow,
+            ReferenceHigh = ParameterForm.ReferenceHigh,
+            CriticalLow = ParameterForm.CriticalLow,
+            CriticalHigh = ParameterForm.CriticalHigh,
+            Notes = ParameterForm.Notes,
+            ReferenceText = ParameterForm.ReferenceText
+        });
+        ParameterForm = new LabResultParameterFormModel();
+    }
+
+    private void RemoveParameter(LabResultParameterFormModel parameter)
+    {
+        PendingParameters.Remove(parameter);
+    }
+
+    private async Task AssignAgentAsync()
+    {
+        if (!TryParseIds(out var bookingId, out var agentUserId))
+        {
+            return;
+        }
+
+        var form = new AssignLabCollectionAgentFormModel
+        {
+            CollectionAgentUserId = agentUserId,
+            CollectionScheduledAt = CollectionStart,
+            CollectionWindowEndAt = CollectionEnd,
+            Notes = "Assigned from lab workflow."
+        };
+        var result = await ApiClient.PutAsync<AssignLabCollectionAgentFormModel, LabBookingModel>($"api/v1/lab/bookings/{bookingId}/collection-agent", form);
+        SetStatus(result?.Success == true ? "Collection agent assigned." : result?.Error?.Message ?? "Agent assignment failed.", result?.Success == true ? "tone-green" : "tone-amber");
+    }
+
+    private async Task StartCollectionAsync()
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.PutAsync<StartLabCollectionFormModel, LabBookingModel>($"api/v1/lab/bookings/{bookingId}/collection/start", new StartLabCollectionFormModel { Notes = "Agent departed." });
+        SetStatus(result?.Success == true ? "Collection started." : result?.Error?.Message ?? "Collection start failed.", result?.Success == true ? "tone-green" : "tone-amber");
+    }
+
+    private async Task MarkCollectedAsync()
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.PutAsync<MarkLabSampleCollectedFormModel, LabBookingModel>($"api/v1/lab/bookings/{bookingId}/collection/collect", new MarkLabSampleCollectedFormModel { FastingVerified = true, Notes = "Sample received from field." });
+        SetStatus(result?.Success == true ? "Sample marked collected." : result?.Error?.Message ?? "Mark collected failed.", result?.Success == true ? "tone-green" : "tone-amber");
+    }
+
+    private async Task EnterResultsAsync()
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId) || !Guid.TryParse(BookingItemIdText, out var bookingItemId))
+        {
+            SetStatus("Enter valid booking and booking item ids.", "tone-amber");
+            return;
+        }
+
+        if (PendingParameters.Count == 0)
+        {
+            SetStatus("Add at least one parameter.", "tone-amber");
+            return;
+        }
+
+        var form = new EnterLabResultsFormModel
+        {
+            Results =
+            [
+                new UpsertLabTestResultFormModel
+                {
+                    LabBookingItemId = bookingItemId,
+                    Summary = ResultSummary,
+                    Parameters = PendingParameters.ToList()
+                }
+            ]
+        };
+
+        var result = await ApiClient.PutAsync<EnterLabResultsFormModel, IReadOnlyList<LabTestResultModel>>($"api/v1/lab/bookings/{bookingId}/results", form);
+        if (result?.Success == true && result.Data is not null)
+        {
+            Results = result.Data;
+            PendingParameters.Clear();
+            ResultSummary = null;
+            SetStatus("Lab results saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Result entry failed.", "tone-amber");
+    }
+
+    private async Task LoadResultsAsync()
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.GetAsync<IReadOnlyList<LabTestResultModel>>($"api/v1/lab/bookings/{bookingId}/results");
+        if (result?.Success == true && result.Data is not null)
+        {
+            Results = result.Data;
+            SetStatus("Lab results loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Unable to load lab results.", "tone-amber");
+    }
+
+    private async Task AcknowledgeAsync(Guid resultId)
+    {
+        var result = await ApiClient.PostAsync<AcknowledgeLabCriticalAlertFormModel, LabTestResultModel>($"api/v1/lab/results/{resultId}/critical-alert/acknowledge", new AcknowledgeLabCriticalAlertFormModel { AcknowledgementNote = "Reviewed from lab workflow." });
+        if (result?.Success == true)
+        {
+            await LoadResultsAsync();
+            SetStatus("Critical alert acknowledged.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Critical alert acknowledgement failed.", "tone-amber");
+    }
+
+    private async Task ValidateAsync(string level)
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.PutAsync<ValidateLabResultsFormModel, IReadOnlyList<LabTestResultModel>>($"api/v1/lab/bookings/{bookingId}/results/validate", new ValidateLabResultsFormModel { Level = level, Notes = $"{level} validation completed." });
+        if (result?.Success == true && result.Data is not null)
+        {
+            Results = result.Data;
+            await LoadQueueAsync();
+            SetStatus($"{level} validation complete.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? $"{level} validation failed.", "tone-amber");
+    }
+
+    private async Task ReleaseAsync()
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.PutAsync<ReleaseLabResultsFormModel, IReadOnlyList<LabTestResultModel>>($"api/v1/lab/bookings/{bookingId}/results/release", new ReleaseLabResultsFormModel { Notes = "Released from lab workflow." });
+        if (result?.Success == true && result.Data is not null)
+        {
+            Results = result.Data;
+            await LoadQueueAsync();
+            SetStatus("Results released.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Result release failed.", "tone-amber");
+    }
+
+    private async Task LoadQueueAsync()
+    {
+        var result = await ApiClient.GetAsync<IReadOnlyList<LabValidationQueueItemModel>>("api/v1/lab/results/validation-queue");
+        if (result?.Success == true && result.Data is not null)
+        {
+            QueueItems = result.Data;
+        }
+    }
+
+    private async Task DownloadReportAsync()
+    {
+        if (!Guid.TryParse(BookingIdText, out var bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return;
+        }
+
+        var download = await ApiClient.DownloadFileAsync($"api/v1/lab/bookings/{bookingId}/report.pdf");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Lab report download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.downloadFile", download.FileName, download.ContentType, Convert.ToBase64String(download.Content));
+        SetStatus("Lab report downloaded.", "tone-green");
+    }
+
+    private bool TryParseIds(out Guid bookingId, out Guid agentUserId)
+    {
+        bookingId = Guid.Empty;
+        agentUserId = Guid.Empty;
+        if (!Guid.TryParse(BookingIdText, out bookingId))
+        {
+            SetStatus("Enter a valid booking id.", "tone-amber");
+            return false;
+        }
+
+        if (!Guid.TryParse(AgentUserIdText, out agentUserId))
+        {
+            SetStatus("Enter a valid agent user id.", "tone-amber");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void OnCollectionStartChanged(ChangeEventArgs args)
+    {
+        CollectionStartText = args.Value?.ToString() ?? string.Empty;
+        CollectionStart = DateTimeOffset.TryParse(CollectionStartText, out var parsed) ? parsed : null;
+    }
+
+    private void OnCollectionEndChanged(ChangeEventArgs args)
+    {
+        CollectionEndText = args.Value?.ToString() ?? string.Empty;
+        CollectionEnd = DateTimeOffset.TryParse(CollectionEndText, out var parsed) ? parsed : null;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

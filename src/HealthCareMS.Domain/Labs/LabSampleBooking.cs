@@ -17,7 +17,11 @@ public enum LabBookingStatus
     Ordered = 1,
     SampleCollected = 2,
     Cancelled = 3,
-    CheckedIn = 4
+    CheckedIn = 4,
+    AgentAssigned = 5,
+    InTransit = 6,
+    ResultsPending = 7,
+    ResultsReleased = 8
 }
 
 public sealed class LabSampleBooking : BaseEntity
@@ -38,19 +42,37 @@ public sealed class LabSampleBooking : BaseEntity
 
     public DateTimeOffset? CollectionScheduledAt { get; set; }
 
+    public DateTimeOffset? CollectionWindowEndAt { get; set; }
+
     public string? CollectionAddress { get; set; }
 
     public string? SampleBarcode { get; set; }
 
     public string? TokenNumber { get; set; }
 
+    public Guid? CollectionAgentUserId { get; set; }
+
+    public DateTimeOffset? CollectionAssignedAt { get; set; }
+
+    public DateTimeOffset? CollectionStartedAt { get; set; }
+
     public bool? FastingVerified { get; set; }
 
     public DateTimeOffset? CheckedInAt { get; set; }
 
+    public DateTimeOffset? SampleCollectedAt { get; set; }
+
+    public DateTimeOffset? ResultsReleasedAt { get; set; }
+
+    public DateTimeOffset? ReportGeneratedAt { get; set; }
+
+    public string? ReportVerificationCode { get; set; }
+
     public DateTimeOffset? BarcodeLabelGeneratedAt { get; set; }
 
     public string? Notes { get; set; }
+
+    public string? CollectionStatusNotes { get; set; }
 
     public decimal SubTotal { get; set; }
 
@@ -66,5 +88,9 @@ public sealed class LabSampleBooking : BaseEntity
 
     public Prescription? Prescription { get; set; }
 
+    public ApplicationUser? CollectionAgentUser { get; set; }
+
     public ICollection<LabBookingItem> Items { get; set; } = new List<LabBookingItem>();
+
+    public ICollection<LabTestResult> Results { get; set; } = new List<LabTestResult>();
 }

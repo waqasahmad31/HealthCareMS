@@ -1,0 +1,117 @@
+@page "/analytics"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Analytics Center</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S32 Analytics</p>
+        <h1>Global Analytics Dashboard</h1>
+    </div>
+    <div class="header-actions">
+        <button class="primary-button" type="button" @onclick="LoadAsync">Refresh Analytics</button>
+    </div>
+</section>
+
+<section class="panel entity-form">
+    <label>Tenant Id<InputText @bind-Value="TenantIdText" /></label>
+    <label>From<input type="date" value="@FromText" @onchange="OnFromChanged" /></label>
+    <label>To<input type="date" value="@ToText" @onchange="OnToChanged" /></label>
+</section>
+
+@if (Snapshot is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card"><span class="metric-label">Revenue</span><strong>@Snapshot.TotalRevenue.ToString("0.00")</strong><span class="tone-green">PKR</span></article>
+        <article class="metric-card"><span class="metric-label">Appointments</span><strong>@Snapshot.TotalAppointments</strong><span class="tone-blue">@Snapshot.CompletedAppointments completed</span></article>
+        <article class="metric-card"><span class="metric-label">Lab TAT</span><strong>@Snapshot.AverageLabTurnaroundHours.ToString("0.0") h</strong><span class="tone-amber">average</span></article>
+        <article class="metric-card"><span class="metric-label">Fulfillment</span><strong>@Snapshot.PharmacyFulfillmentRatePercent.ToString("0.0")%</strong><span class="tone-blue">pharmacy</span></article>
+    </section>
+
+    <section class="portal-grid">
+        <article class="panel">
+            <div class="panel-header"><h2>Module Revenue</h2><span class="status-pill green">@Snapshot.ModuleRevenue.Count</span></div>
+            @foreach (var module in Snapshot.ModuleRevenue)
+            {
+                <div class="queue-row">
+                    <div><strong>@module.Module</strong><span>Revenue stream</span></div>
+                    <span class="status-pill blue">@module.Revenue.ToString("0.00")</span>
+                </div>
+            }
+        </article>
+        <article class="panel">
+            <div class="panel-header"><h2>Doctor Utilization</h2><span class="status-pill blue">@Snapshot.DoctorUtilization.Count</span></div>
+            @foreach (var doctor in Snapshot.DoctorUtilization)
+            {
+                <div class="queue-row">
+                    <div><strong>@doctor.DoctorName</strong><span>@doctor.AppointmentCount appointments</span></div>
+                    <span class="status-pill amber">@doctor.UtilizationPercent.ToString("0.0")%</span>
+                </div>
+            }
+        </article>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private AnalyticsSnapshotModel? Snapshot { get; set; }
+    private string TenantIdText { get; set; } = string.Empty;
+    private DateOnly From { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-29));
+    private DateOnly To { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+    private string FromText => From.ToString("yyyy-MM-dd");
+    private string ToText => To.ToString("yyyy-MM-dd");
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var query = $"from={From:yyyy-MM-dd}&to={To:yyyy-MM-dd}";
+        if (Guid.TryParse(TenantIdText, out var tenantId))
+        {
+            query += $"&tenantId={tenantId}";
+        }
+
+        var result = await ApiClient.GetAsync<AnalyticsSnapshotModel>($"api/v1/insights/analytics?{query}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            Snapshot = result.Data;
+            SetStatus("Analytics loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Analytics unavailable.", "tone-amber");
+    }
+
+    private void OnFromChanged(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            From = parsed;
+        }
+    }
+
+    private void OnToChanged(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            To = parsed;
+        }
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

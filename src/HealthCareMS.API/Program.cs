@@ -12,6 +12,7 @@ using HealthCareMS.API.Security;
 using HealthCareMS.Application;
 using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Application.Consultations;
+using HealthCareMS.Application.Insights;
 using HealthCareMS.Application.Notifications;
 using HealthCareMS.Application.Pharmacy;
 using HealthCareMS.Infrastructure;
@@ -236,6 +237,11 @@ if (app.Environment.IsDevelopment())
 RecurringJob.AddOrUpdate<IPharmacyService>(
     "PharmacyStockAlertScan",
     service => service.RunStockAlertScanAsync(CancellationToken.None),
+    Cron.Daily);
+
+RecurringJob.AddOrUpdate<IInsightService>(
+    "AnalyticsDigestEmail",
+    service => service.SendScheduledAnalyticsEmailsAsync(CancellationToken.None),
     Cron.Daily);
 
 if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))

@@ -50,7 +50,7 @@ public sealed class PatientAndDoctorServiceTests
     {
         await using var dbContext = CreateDbContext();
         await SeedRoleAsync(dbContext, "Doctor");
-        var service = new DoctorService(dbContext, new Pbkdf2PasswordHasher());
+        var service = new DoctorService(dbContext, new Pbkdf2PasswordHasher(), new TestDistributedQueryCache());
 
         var createResult = await service.CreateProfileAsync(
             new CreateDoctorProfileRequest(

@@ -12,7 +12,7 @@ using QuestPDF.Infrastructure;
 
 namespace HealthCareMS.Infrastructure.Pharmacy;
 
-public sealed class PharmacyService(
+public sealed partial class PharmacyService(
     HealthCareDbContext dbContext,
     IDistributedQueryCache queryCache) : IPharmacyService
 {

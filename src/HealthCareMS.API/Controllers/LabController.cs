@@ -84,6 +84,50 @@ public sealed class LabController(ILabService labService) : ApiControllerBase
         return FromResult(result);
     }
 
+    [HttpPut("bookings/{bookingId:guid}/collection-agent")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> AssignCollectionAgent(
+        Guid bookingId,
+        AssignLabCollectionAgentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.AssignCollectionAgentAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("collections/assigned/{collectionAgentUserId:guid}")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> GetAssignedCollections(
+        Guid collectionAgentUserId,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.GetAssignedCollectionsAsync(collectionAgentUserId, status, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("bookings/{bookingId:guid}/collection/start")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> StartCollection(
+        Guid bookingId,
+        StartLabCollectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.StartCollectionAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("bookings/{bookingId:guid}/collection/collect")]
+    [RequirePermission(PermissionKeys.Lab.SampleCollect)]
+    public async Task<IActionResult> MarkSampleCollected(
+        Guid bookingId,
+        MarkLabSampleCollectedRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.MarkSampleCollectedAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
     [HttpGet("bookings/{bookingId:guid}/barcode-label.pdf")]
     [RequirePermission(PermissionKeys.Lab.SampleCollect)]
     public async Task<IActionResult> DownloadBarcodeLabel(Guid bookingId, CancellationToken cancellationToken)
@@ -102,6 +146,109 @@ public sealed class LabController(ILabService labService) : ApiControllerBase
     public async Task<IActionResult> GetBookingsByAppointment(Guid appointmentId, CancellationToken cancellationToken)
     {
         var result = await labService.GetBookingsByAppointmentAsync(appointmentId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("bookings/{bookingId:guid}/results")]
+    [RequirePermission(PermissionKeys.Lab.ResultsEntry)]
+    public async Task<IActionResult> EnterResults(
+        Guid bookingId,
+        EnterLabResultsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.EnterResultsAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("bookings/{bookingId:guid}/results")]
+    [RequirePermission(PermissionKeys.Lab.ResultsEntry)]
+    public async Task<IActionResult> GetResults(Guid bookingId, CancellationToken cancellationToken)
+    {
+        var result = await labService.GetResultsAsync(bookingId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPost("results/{resultId:guid}/critical-alert/acknowledge")]
+    [RequirePermission(PermissionKeys.Lab.ResultsValidate)]
+    public async Task<IActionResult> AcknowledgeCriticalAlert(
+        Guid resultId,
+        AcknowledgeLabCriticalAlertRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.AcknowledgeCriticalAlertAsync(resultId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("results/validation-queue")]
+    [RequirePermission(PermissionKeys.Lab.ResultsValidate)]
+    public async Task<IActionResult> GetValidationQueue([FromQuery] string? filter, CancellationToken cancellationToken)
+    {
+        var result = await labService.GetValidationQueueAsync(filter, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("bookings/{bookingId:guid}/results/validate")]
+    [RequirePermission(PermissionKeys.Lab.ResultsValidate)]
+    public async Task<IActionResult> ValidateResults(
+        Guid bookingId,
+        ValidateLabResultsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.ValidateResultsAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPut("bookings/{bookingId:guid}/results/release")]
+    [RequirePermission(PermissionKeys.Lab.ResultsRelease)]
+    public async Task<IActionResult> ReleaseResults(
+        Guid bookingId,
+        ReleaseLabResultsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.ReleaseResultsAsync(bookingId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpPost("results/{resultId:guid}/addendum")]
+    [RequirePermission(PermissionKeys.Lab.ResultsRelease)]
+    public async Task<IActionResult> AddAddendum(
+        Guid resultId,
+        AddLabResultAddendumRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.AddAddendumAsync(resultId, request, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("bookings/{bookingId:guid}/report.pdf")]
+    [RequirePermission(PermissionKeys.Lab.ReportsDownload)]
+    public async Task<IActionResult> DownloadLabReport(Guid bookingId, CancellationToken cancellationToken)
+    {
+        var result = await labService.GenerateReportPdfAsync(bookingId, cancellationToken);
+        if (result.IsFailure)
+        {
+            return FromResult(result);
+        }
+
+        return File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
+    }
+
+    [HttpGet("patients/{patientId:guid}/results")]
+    [Authorize]
+    public async Task<IActionResult> GetPatientResults(Guid patientId, CancellationToken cancellationToken)
+    {
+        var result = await labService.GetPatientResultsAsync(patientId, cancellationToken);
+        return FromResult(result);
+    }
+
+    [HttpGet("reports/verify/{bookingId:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyReport(
+        Guid bookingId,
+        [FromQuery] string code,
+        CancellationToken cancellationToken)
+    {
+        var result = await labService.VerifyReportAsync(bookingId, code, cancellationToken);
         return FromResult(result);
     }
 

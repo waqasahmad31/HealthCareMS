@@ -1,0 +1,257 @@
+@page "/payments"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@using Microsoft.JSInterop
+@inject HealthCareApiClient ApiClient
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Payments Center</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S23 Payments</p>
+        <h1>Gateway Checkout & Refunds</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadGatewaysAsync">Gateways</button>
+        <button class="secondary-button" type="button" @onclick="LoadOrderPaymentAsync">Refresh Payment</button>
+        <button class="primary-button" type="button" @onclick="CreateCheckoutAsync">Create Checkout</button>
+    </div>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Checkout</h2>
+            <span class="status-pill blue">@GatewayOptions.Count gateways</span>
+        </div>
+        <div class="entity-form">
+            <label>Pharmacy Order Id<InputText @bind-Value="OrderIdText" /></label>
+            <label>
+                Gateway
+                <InputSelect @bind-Value="CheckoutForm.Gateway">
+                    @foreach (var gateway in GatewayOptions)
+                    {
+                        <option value="@gateway.Gateway">@gateway.DisplayName</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>Return URL<InputText @bind-Value="CheckoutForm.ReturnUrl" /></label>
+            <label>Cancel URL<InputText @bind-Value="CheckoutForm.CancelUrl" /></label>
+        </div>
+        @if (Checkout is not null)
+        {
+            <div class="dispense-summary">
+                <strong>@Checkout.Transaction.PaymentNumber</strong>
+                <span>@Checkout.Transaction.Gateway | @Checkout.Transaction.Status</span>
+                <span>@Checkout.HostedPaymentUrl</span>
+            </div>
+        }
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Gateway Simulation</h2>
+            <span class="status-pill amber">Webhook-ready</span>
+        </div>
+        <div class="entity-form">
+            <label>
+                Callback Status
+                <InputSelect @bind-Value="SimulationForm.Status">
+                    <option>Succeeded</option>
+                    <option>Failed</option>
+                </InputSelect>
+            </label>
+            <label>External Reference<InputText @bind-Value="SimulationForm.ExternalReference" /></label>
+            <button class="secondary-button" type="button" @onclick="SimulateCallbackAsync" disabled="@(Payment is null)">Run Callback</button>
+        </div>
+
+        <div class="entity-form">
+            <label>Refund Amount<InputNumber @bind-Value="RefundForm.Amount" /></label>
+            <label>Refund Reason<InputTextArea @bind-Value="RefundForm.Reason" /></label>
+            <button class="secondary-button" type="button" @onclick="RefundAsync" disabled="@(Payment is null)">Refund</button>
+            <button class="secondary-button" type="button" @onclick="DownloadInvoiceAsync" disabled="@(Payment?.Invoice is null)">Invoice PDF</button>
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Payment Snapshot</h2>
+        <span class="status-pill green">@((Payment?.Refunds.Count ?? 0).ToString()) refunds</span>
+    </div>
+    @if (Payment is null)
+    {
+        <p class="tone-muted">Load a pharmacy order payment to review live state.</p>
+    }
+    else
+    {
+        <div class="stats-grid portal-stats">
+            <article class="metric-card"><span class="metric-label">Status</span><strong>@Payment.Status</strong><span class="tone-blue">@Payment.Gateway</span></article>
+            <article class="metric-card"><span class="metric-label">Amount</span><strong>@Payment.Amount.ToString("0.00")</strong><span class="tone-green">@Payment.Currency</span></article>
+            <article class="metric-card"><span class="metric-label">Invoice</span><strong>@(Payment.Invoice?.InvoiceNumber ?? "Pending")</strong><span class="tone-muted">@Payment.Invoice?.Status</span></article>
+            <article class="metric-card"><span class="metric-label">Paid At</span><strong>@(Payment.PaidAt?.ToString("yyyy-MM-dd HH:mm") ?? "Awaiting")</strong><span class="tone-amber">@Payment.ExternalReference</span></article>
+        </div>
+
+        <div class="table-shell">
+            <div class="table-row table-head pharmacy-online-order-row">
+                <span>Refund</span>
+                <span>Status</span>
+                <span>Amount</span>
+                <span>Requested</span>
+            </div>
+            @foreach (var refund in Payment.Refunds)
+            {
+                <div class="table-row pharmacy-online-order-row">
+                    <span>@refund.RefundNumber<br />@refund.Reason</span>
+                    <span>@refund.Status</span>
+                    <span>@refund.Amount.ToString("0.00")</span>
+                    <span>@refund.RequestedAt.ToString("yyyy-MM-dd HH:mm")</span>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private string OrderIdText { get; set; } = string.Empty;
+    private CreateOrderPaymentFormModel CheckoutForm { get; set; } = new()
+    {
+        ReturnUrl = "https://localhost/payments/success",
+        CancelUrl = "https://localhost/payments/cancel"
+    };
+    private SimulatePaymentCallbackFormModel SimulationForm { get; set; } = new();
+    private RefundPaymentFormModel RefundForm { get; set; } = new();
+    private IReadOnlyList<PaymentGatewayOptionModel> GatewayOptions { get; set; } = [];
+    private PaymentCheckoutModel? Checkout { get; set; }
+    private PaymentTransactionModel? Payment { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGatewaysAsync();
+    }
+
+    private async Task LoadGatewaysAsync()
+    {
+        var result = await ApiClient.GetAsync<IReadOnlyList<PaymentGatewayOptionModel>>("api/v1/payments/gateways");
+        if (result?.Success == true && result.Data is not null)
+        {
+            GatewayOptions = result.Data;
+            CheckoutForm.Gateway = GatewayOptions.FirstOrDefault(x => x.IsEnabled)?.Gateway ?? "JazzCash";
+            SetStatus("Payment gateways loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Payment gateways unavailable.", "tone-amber");
+    }
+
+    private async Task CreateCheckoutAsync()
+    {
+        if (!Guid.TryParse(OrderIdText, out var orderId))
+        {
+            SetStatus("Enter a valid pharmacy order id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.PostAsync<CreateOrderPaymentFormModel, PaymentCheckoutModel>($"api/v1/payments/pharmacy-orders/{orderId}/checkout", CheckoutForm);
+        if (result?.Success == true && result.Data is not null)
+        {
+            Checkout = result.Data;
+            Payment = result.Data.Transaction;
+            SetStatus("Checkout session created.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Checkout creation failed.", "tone-amber");
+    }
+
+    private async Task LoadOrderPaymentAsync()
+    {
+        if (!Guid.TryParse(OrderIdText, out var orderId))
+        {
+            SetStatus("Enter a valid pharmacy order id.", "tone-amber");
+            return;
+        }
+
+        var result = await ApiClient.GetAsync<PaymentTransactionModel>($"api/v1/payments/pharmacy-orders/{orderId}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            Payment = result.Data;
+            SetStatus("Payment snapshot loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Payment snapshot unavailable.", "tone-amber");
+    }
+
+    private async Task SimulateCallbackAsync()
+    {
+        if (Payment is null)
+        {
+            return;
+        }
+
+        var result = await ApiClient.PostAsync<SimulatePaymentCallbackFormModel, PaymentTransactionModel>(
+            $"api/v1/payments/transactions/{Payment.Id}/simulate",
+            SimulationForm);
+        if (result?.Success == true && result.Data is not null)
+        {
+            Payment = result.Data;
+            SetStatus("Gateway callback processed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Gateway callback failed.", "tone-amber");
+    }
+
+    private async Task RefundAsync()
+    {
+        if (Payment is null)
+        {
+            return;
+        }
+
+        var result = await ApiClient.PostAsync<RefundPaymentFormModel, PaymentRefundModel>(
+            $"api/v1/payments/transactions/{Payment.Id}/refund",
+            RefundForm);
+        if (result?.Success == true)
+        {
+            await LoadOrderPaymentAsync();
+            SetStatus("Refund completed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Refund failed.", "tone-amber");
+    }
+
+    private async Task DownloadInvoiceAsync()
+    {
+        if (Payment?.Invoice is null)
+        {
+            return;
+        }
+
+        var download = await ApiClient.DownloadFileAsync($"api/v1/payments/invoices/{Payment.Invoice.Id}/invoice.pdf");
+        if (!download.Success)
+        {
+            SetStatus(download.ErrorMessage ?? "Invoice download failed.", "tone-amber");
+            return;
+        }
+
+        await JsRuntime.InvokeVoidAsync("HealthCareMSMedia.downloadFile", download.FileName, download.ContentType, Convert.ToBase64String(download.Content));
+        SetStatus("Invoice downloaded.", "tone-green");
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+}

@@ -50,3 +50,10 @@ public sealed record DoctorRatingSummaryResponse(
     decimal AverageRating,
     int RatingCount,
     IReadOnlyList<DoctorReviewResponse> RecentReviews);
+
+public sealed record DoctorRecommendationResponse(
+    DoctorResponse Doctor,
+    decimal MatchScore,
+    bool IsBestMatch,
+    int AvailableSlotCount,
+    IReadOnlyList<string> MatchReasons);

@@ -93,4 +93,16 @@ public interface IPharmacyService
         Guid orderId,
         UpdatePharmacyOrderStatusRequest request,
         CancellationToken cancellationToken);
+
+    Task<Result<PharmacyReportsDashboardResponse>> GetReportsAsync(
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken);
+
+    Task<Result<ReportExportResponse>> ExportReportAsync(
+        string reportType,
+        DateOnly? from,
+        DateOnly? to,
+        string format,
+        CancellationToken cancellationToken);
 }

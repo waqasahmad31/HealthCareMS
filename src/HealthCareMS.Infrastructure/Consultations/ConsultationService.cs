@@ -538,7 +538,16 @@ public sealed class ConsultationService(
             booking.Items
                 .OrderBy(x => x.LabTest.TestName)
                 .Select(MapLabBookingItem)
-                .ToList());
+                .ToList(),
+            booking.CollectionWindowEndAt,
+            booking.CollectionAgentUserId,
+            booking.CollectionAgentUser?.FullName,
+            booking.CollectionAssignedAt,
+            booking.CollectionStartedAt,
+            booking.SampleCollectedAt,
+            booking.ResultsReleasedAt,
+            booking.ReportGeneratedAt,
+            booking.ReportVerificationCode);
     }
 
     private static LabBookingItemResponse MapLabBookingItem(LabBookingItem item)

@@ -77,31 +77,48 @@
     </div>
 </section>
 
+<section class="panel">
+    <div class="panel-header">
+        <h2>Enterprise Launchpad</h2>
+        <span class="status-pill green">S23-S36</span>
+    </div>
+    <div class="module-grid">
+        @foreach (var item in Launchpad)
+        {
+            <a class="module-tile" href="@item.Route">
+                <strong>@item.Name</strong>
+                <span>@item.Caption</span>
+            </a>
+        }
+    </div>
+</section>
+
 @code {
     private readonly DashboardStat[] Stats =
     [
-        new("Active Tenants", "0", "Ready for onboarding", "tone-blue"),
-        new("Patients", "0", "Phase 1 pending", "tone-muted"),
-        new("Doctors", "0", "Verification flow next", "tone-amber"),
-        new("Revenue", "PKR 0", "Payments later", "tone-green")
+        new("Active Tenants", "Live", "Ready for onboarding", "tone-blue"),
+        new("Patients", "Timeline", "Unified patient health view", "tone-muted"),
+        new("Doctors", "Best Match", "Recommendation engine enabled", "tone-amber"),
+        new("Revenue", "Payments", "Checkout + refunds + analytics", "tone-green")
     ];
 
     private readonly QueueItem[] Queue =
     [
-        new("Tenant registry", "Identity schema and API are in place", "Ready", "status-pill green"),
-        new("Auth service", "JWT login endpoint is wired", "API", "status-pill blue"),
-        new("Patient module", "Profile commands are next", "Next", "status-pill amber"),
-        new("Doctor module", "Schedule and verification are next", "Next", "status-pill amber")
+        new("Payments center", "JazzCash, EasyPaisa, Stripe checkout with invoice/refund simulation", "Ready", "status-pill green"),
+        new("Lab workflow", "Home collection, result entry, validation, release, QR reports", "Live", "status-pill blue"),
+        new("Analytics center", "Cross-module revenue, utilization, TAT, fulfillment", "Ready", "status-pill amber"),
+        new("Security center", "Sessions, login history, 2FA controls", "Ready", "status-pill amber")
     ];
 
     private readonly ModuleTile[] Modules =
     [
         new("Identity", "Users, roles, permissions"),
-        new("Patient", "Profile foundation"),
-        new("Doctor", "Schedule foundation"),
-        new("Appointment", "Sprint 7"),
-        new("Pharmacy", "Phase 4"),
-        new("Laboratory", "Phase 5")
+        new("Patient", "Timeline + emergency QR"),
+        new("Doctor", "Discovery + recommendations"),
+        new("Appointment", "Consultation lifecycle"),
+        new("Pharmacy", "Payments + reconciliation"),
+        new("Laboratory", "Home collection + released reports"),
+        new("Security", "Sessions + 2FA")
     ];
 
     private readonly PermissionPreview[] Permissions =
@@ -114,6 +131,18 @@
         new("doctor.verify", "Doctor Admin")
     ];
 
+    private readonly LaunchpadItem[] Launchpad =
+    [
+        new("Payments Center", "/payments", "Gateway sessions, invoices, refunds"),
+        new("Pharmacy Reports", "/pharmacy/reports", "Sales, valuation, reconciliation"),
+        new("Lab Workflow", "/lab-workflow", "Collection to report release"),
+        new("Health Timeline", "/timeline", "Patient summary and emergency QR"),
+        new("Analytics Center", "/analytics", "Cross-module KPIs"),
+        new("Security Center", "/security", "2FA, sessions, login history"),
+        new("Doctor Discovery", "/doctor-discovery", "Best-match recommendation engine"),
+        new("Help Center", "/help", "Guides and rollout handover")
+    ];
+
     private sealed record DashboardStat(string Label, string Value, string Change, string Tone);
 
     private sealed record QueueItem(string Title, string Detail, string Status, string BadgeClass);
@@ -121,4 +150,6 @@
     private sealed record ModuleTile(string Name, string Status);
 
     private sealed record PermissionPreview(string Key, string Scope);
+
+    private sealed record LaunchpadItem(string Name, string Route, string Caption);
 }

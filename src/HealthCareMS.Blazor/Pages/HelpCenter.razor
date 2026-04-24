@@ -1,0 +1,54 @@
+@page "/help"
+
+<PageTitle>Help Center</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">S36 Help & Training</p>
+        <h1>Launch Guides & Walkthroughs</h1>
+    </div>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header"><h2>User Guides</h2><span class="status-pill blue">Ready</span></div>
+        <div class="queue-list">
+            <div class="queue-row"><div><strong>Patient Journey</strong><span>Timeline, bookings, emergency QR, prescriptions.</span></div></div>
+            <div class="queue-row"><div><strong>Doctor Journey</strong><span>Queue, consultation, lab review, best-match discovery.</span></div></div>
+            <div class="queue-row"><div><strong>Pharmacy & Lab Ops</strong><span>Payments, reconciliation, home collection, result release.</span></div></div>
+            <div class="queue-row"><div><strong>Security & Admin</strong><span>Sessions, 2FA, analytics, deployment readiness.</span></div></div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Walkthrough Links</h2><span class="status-pill green">Go-live</span></div>
+        <div class="queue-list">
+            <div class="queue-row"><div><strong>/payments</strong><span>Gateway checkout, invoice, refund simulation.</span></div></div>
+            <div class="queue-row"><div><strong>/pharmacy/reports</strong><span>Sales, stock valuation, reconciliation exports.</span></div></div>
+            <div class="queue-row"><div><strong>/timeline</strong><span>Patient health timeline and PDF summary.</span></div></div>
+            <div class="queue-row"><div><strong>/analytics</strong><span>Global KPI dashboard and digest-ready metrics.</span></div></div>
+            <div class="queue-row"><div><strong>/security</strong><span>2FA setup, active sessions, login history.</span></div></div>
+            <div class="queue-row"><div><strong>/doctor-discovery</strong><span>Recommendation engine and best-match scoring.</span></div></div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Deployment Pack</h2><span class="status-pill amber">S35</span></div>
+        <div class="queue-list">
+            <div class="queue-row"><div><strong>ProductionDeployment.md</strong><span>Container topology, env vars, migration flow, release gates.</span></div></div>
+            <div class="queue-row"><div><strong>OperationsRunbook.md</strong><span>Daily checks, rollback path, incident pointers, hypercare workflow.</span></div></div>
+            <div class="queue-row"><div><strong>docker-compose.prod.yml</strong><span>PostgreSQL, API, Blazor, edge reverse proxy production stack.</span></div></div>
+            <div class="queue-row"><div><strong>healthcarems-smoke.ps1</strong><span>Automated post-deploy HTTP smoke verification script.</span></div></div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Validation Pack</h2><span class="status-pill green">S36</span></div>
+        <div class="queue-list">
+            <div class="queue-row"><div><strong>61 Integration Tests</strong><span>Advanced payments, lab release, analytics, recommendation, security coverage.</span></div></div>
+            <div class="queue-row"><div><strong>5 Unit Tests</strong><span>Core low-level behavior remains green after premium rollout.</span></div></div>
+            <div class="queue-row"><div><strong>GoLiveHandover.md</strong><span>Role-based training and hypercare ownership model.</span></div></div>
+            <div class="queue-row"><div><strong>EF Core Migration</strong><span>Database blueprint updated for S23-S36 entities and workflows.</span></div></div>
+        </div>
+    </article>
+</section>

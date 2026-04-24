@@ -1,0 +1,118 @@
+name: healthcarems-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: healthcarems-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-HealthCareMS}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - healthcarems-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-HealthCareMS}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - healthcarems
+
+  api:
+    build:
+      context: ..
+      dockerfile: src/HealthCareMS.API/Dockerfile
+    container_name: healthcarems-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-HealthCareMS};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
+      Database__ApplyMigrations: ${DATABASE_APPLY_MIGRATIONS:-true}
+      Database__SeedDemoData: false
+      Jwt__Issuer: ${JWT_ISSUER:-HealthCareMS}
+      Jwt__Audience: ${JWT_AUDIENCE:-HealthCareMS.Client}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is required}
+      SuperAdmin__Email: ${SUPERADMIN_EMAIL:?SUPERADMIN_EMAIL is required}
+      SuperAdmin__Password: ${SUPERADMIN_PASSWORD:?SUPERADMIN_PASSWORD is required}
+      ApplicationLinks__ApiBaseUrl: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
+      ApplicationLinks__ClientBaseUrl: ${PUBLIC_CLIENT_BASE_URL:?PUBLIC_CLIENT_BASE_URL is required}
+      Notifications__Smtp__Enabled: ${SMTP_ENABLED:-false}
+      Notifications__Smtp__Host: ${SMTP_HOST:-}
+      Notifications__Smtp__Port: ${SMTP_PORT:-25}
+      Notifications__Smtp__FromEmail: ${SMTP_FROM_EMAIL:-no-reply@healthcarems.local}
+      Notifications__Smtp__FromName: ${SMTP_FROM_NAME:-HealthCareMS}
+      Notifications__Smtp__UseSsl: ${SMTP_USE_SSL:-false}
+      Notifications__Smtp__UserName: ${SMTP_USERNAME:-}
+      Notifications__Smtp__Password: ${SMTP_PASSWORD:-}
+      Notifications__Twilio__Enabled: ${TWILIO_ENABLED:-false}
+      Notifications__Twilio__AccountSid: ${TWILIO_ACCOUNT_SID:-}
+      Notifications__Twilio__AuthToken: ${TWILIO_AUTH_TOKEN:-}
+      Notifications__Twilio__FromNumber: ${TWILIO_FROM_NUMBER:-}
+      Payments__Currency: ${PAYMENTS_CURRENCY:-PKR}
+      Payments__JazzCash__Enabled: ${PAYMENTS_JAZZCASH_ENABLED:-false}
+      Payments__JazzCash__DisplayName: JazzCash
+      Payments__JazzCash__CheckoutBaseUrl: ${PAYMENTS_JAZZCASH_CHECKOUT_URL:-https://sandbox.jazzcash.example/checkout}
+      Payments__JazzCash__WebhookSecret: ${PAYMENTS_JAZZCASH_WEBHOOK_SECRET:-}
+      Payments__EasyPaisa__Enabled: ${PAYMENTS_EASYPAISA_ENABLED:-false}
+      Payments__EasyPaisa__DisplayName: EasyPaisa
+      Payments__EasyPaisa__CheckoutBaseUrl: ${PAYMENTS_EASYPAISA_CHECKOUT_URL:-https://sandbox.easypaisa.example/checkout}
+      Payments__EasyPaisa__WebhookSecret: ${PAYMENTS_EASYPAISA_WEBHOOK_SECRET:-}
+      Payments__Stripe__Enabled: ${PAYMENTS_STRIPE_ENABLED:-false}
+      Payments__Stripe__DisplayName: Stripe
+      Payments__Stripe__CheckoutBaseUrl: ${PAYMENTS_STRIPE_CHECKOUT_URL:-https://api.stripe.com}
+      Payments__Stripe__WebhookSecret: ${PAYMENTS_STRIPE_WEBHOOK_SECRET:-}
+      ApiHardening__Telemetry__OtlpEndpoint: ${OTLP_ENDPOINT:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/api/v1/system/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - healthcarems
+
+  blazor:
+    build:
+      context: ..
+      dockerfile: src/HealthCareMS.Blazor/Dockerfile
+    container_name: healthcarems-blazor
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL is required}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - healthcarems
+
+  edge:
+    image: nginx:1.27-alpine
+    container_name: healthcarems-edge
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      blazor:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/healthcarems.edge.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - healthcarems
+
+volumes:
+  healthcarems-postgres-data:
+
+networks:
+  healthcarems:
+

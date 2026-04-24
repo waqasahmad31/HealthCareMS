@@ -34,6 +34,24 @@ public sealed class DoctorsController(
     }
 
     [AllowAnonymous]
+    [HttpGet("recommendations")]
+    [OutputCache(PolicyName = "LookupGetMedium")]
+    public async Task<IActionResult> GetRecommendations(
+        [FromQuery] Guid? patientId,
+        [FromQuery] string? specialization,
+        [FromQuery] string? city,
+        [FromQuery] decimal? maxFee,
+        [FromQuery] DateOnly? date,
+        [FromQuery] string appointmentType = "Online",
+        CancellationToken cancellationToken = default)
+    {
+        var results = await doctorService.GetRecommendationsAsync(
+            new DoctorRecommendationRequest(patientId, specialization, city, maxFee, date, appointmentType),
+            cancellationToken);
+        return OkEnvelope(results);
+    }
+
+    [AllowAnonymous]
     [HttpGet("{id:guid}")]
     [OutputCache(PolicyName = "LookupGetMedium")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)

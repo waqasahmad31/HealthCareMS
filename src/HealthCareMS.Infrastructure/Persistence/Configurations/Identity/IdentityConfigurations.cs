@@ -255,6 +255,55 @@ public sealed class NavigationIconConfiguration : IEntityTypeConfiguration<Navig
     }
 }
 
+public sealed class UserAuthSessionConfiguration : IEntityTypeConfiguration<UserAuthSession>
+{
+    public void Configure(EntityTypeBuilder<UserAuthSession> builder)
+    {
+        builder.ToTable("UserAuthSessions", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.RefreshTokenHash).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.IpAddress).HasMaxLength(80);
+        builder.Property(x => x.UserAgent).HasMaxLength(512);
+        builder.Property(x => x.DeviceLabel).HasMaxLength(200);
+
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.RefreshTokenHash).IsUnique();
+        builder.HasIndex(x => new { x.UserId, x.ExpiresAt });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class UserLoginActivityConfiguration : IEntityTypeConfiguration<UserLoginActivity>
+{
+    public void Configure(EntityTypeBuilder<UserLoginActivity> builder)
+    {
+        builder.ToTable("UserLoginActivities", DatabaseSchemas.Identity);
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Email).HasMaxLength(255).IsRequired();
+        builder.Property(x => x.IpAddress).HasMaxLength(80);
+        builder.Property(x => x.UserAgent).HasMaxLength(512);
+        builder.Property(x => x.FailureReason).HasMaxLength(500);
+
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => new { x.Email, x.AttemptedAt });
+        builder.HasQueryFilter(x => !x.IsDeleted);
+
+        builder
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class UserNavigationAssignmentConfiguration : IEntityTypeConfiguration<UserNavigationAssignment>
 {
     public void Configure(EntityTypeBuilder<UserNavigationAssignment> builder)
