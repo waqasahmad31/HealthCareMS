@@ -1,0 +1,544 @@
+@page "/doctors"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Doctors Workspace</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Doctor Operations</p>
+        <h1>Doctor Discovery, Credential, And Availability Workspace</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="LoadDoctorsAsync" disabled="@IsBusy">Refresh Search</button>
+        <button class="secondary-button" type="button" @onclick="LoadAvailabilityAsync" disabled="@(IsBusy || SelectedDoctor is null)">Load Slots</button>
+        <button class="primary-button" type="button" @onclick="SaveDoctorProfileAsync" disabled="@(IsBusy || SelectedDoctor is null)">Save Doctor</button>
+    </div>
+</section>
+
+@if (SelectedDoctor is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card">
+            <span class="metric-label">Selected Doctor</span>
+            <strong>@SelectedDoctor.FullName</strong>
+            <span class="tone-blue">@SelectedDoctor.Specialization</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Rating</span>
+            <strong>@SelectedDoctor.AverageRating.ToString("0.0")</strong>
+            <span class="tone-green">@SelectedDoctor.RatingCount reviews</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Schedules</span>
+            <strong>@ScheduleEditor.Count</strong>
+            <span class="tone-amber">editable slots</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Available Slots</span>
+            <strong>@AvailableSlots.Count</strong>
+            <span class="tone-muted">@SlotAppointmentType</span>
+        </article>
+    </section>
+}
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Discovery Search</h2>
+            <span class="status-pill blue">@DoctorResults.Count</span>
+        </div>
+        <div class="entity-form">
+            <label>Specialization<InputText @bind-Value="SpecializationFilter" /></label>
+            <label>City<InputText @bind-Value="CityFilter" /></label>
+            <label>Max Fee<InputNumber @bind-Value="MaxFeeFilter" /></label>
+        </div>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="LoadDoctorsAsync" disabled="@IsBusy">Search</button>
+            <button class="text-button" type="button" @onclick="ResetDoctorSearch">Reset</button>
+        </div>
+        <div class="table-shell">
+            <div class="table-row table-head">
+                <span>Doctor</span>
+                <span>Location</span>
+                <span>Fee / Rating</span>
+                <span></span>
+            </div>
+            @foreach (var doctor in DoctorResults)
+            {
+                <div class="table-row">
+                    <span>@doctor.FullName<br />@doctor.Specialization</span>
+                    <span>@doctor.City</span>
+                    <span>@doctor.ConsultationFee.ToString("0") / @doctor.AverageRating.ToString("0.0")</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SelectDoctorAsync(doctor.Id)">Open</button>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Doctor Profile</h2>
+            <span class="@VerificationPillClass">@VerificationPillText</span>
+        </div>
+        @if (SelectedDoctor is null)
+        {
+            <p class="tone-muted">Search and select a doctor to unlock profile, verification, and schedule tools.</p>
+        }
+        else
+        {
+            <div class="dispense-summary">
+                <strong>@SelectedDoctor.FullName</strong>
+                <span>@SelectedDoctor.Email / @DisplayText(SelectedDoctor.PhoneNumber, "No phone")</span>
+                <span>@SelectedDoctor.PmdcRegistrationNumber</span>
+            </div>
+            <div class="entity-form">
+                <label>Specialization<InputText @bind-Value="DoctorProfileForm.Specialization" /></label>
+                <label>Qualification<InputText @bind-Value="DoctorProfileForm.Qualification" /></label>
+                <label>City<InputText @bind-Value="DoctorProfileForm.City" /></label>
+                <label>Consultation Fee<InputNumber @bind-Value="DoctorProfileForm.ConsultationFee" /></label>
+                <label>Biography<InputTextArea @bind-Value="DoctorProfileForm.Biography" /></label>
+                <label class="checkbox-label">
+                    <InputCheckbox @bind-Value="DoctorProfileForm.IsActive" />
+                    Active Profile
+                </label>
+                <label class="checkbox-label">
+                    <InputCheckbox @bind-Value="VerifyForm.IsVerified" />
+                    Verified
+                </label>
+            </div>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="UpdateVerificationAsync" disabled="@IsBusy">Update Verification</button>
+                <button class="primary-button" type="button" @onclick="SaveDoctorProfileAsync" disabled="@IsBusy">Save Profile</button>
+            </div>
+        }
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Schedule Studio</h2>
+            <span class="status-pill green">@ScheduleEditor.Count slots</span>
+        </div>
+        @if (SelectedDoctor is null)
+        {
+            <p class="tone-muted">Select a doctor to edit recurring weekly schedule slots.</p>
+        }
+        else
+        {
+            <div class="entity-form">
+                <label>
+                    Day
+                    <InputSelect @bind-Value="NewSlot.DayOfWeek">
+                        @foreach (var day in DaysOfWeek)
+                        {
+                            <option value="@day">@day</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>Start<input type="time" value="@NewSlotStartTimeText" @onchange="OnNewSlotStartChanged" /></label>
+                <label>End<input type="time" value="@NewSlotEndTimeText" @onchange="OnNewSlotEndChanged" /></label>
+                <label>Duration<InputNumber @bind-Value="NewSlot.SlotDurationMinutes" /></label>
+                <label class="checkbox-label">
+                    <InputCheckbox @bind-Value="NewSlot.IsOnlineAvailable" />
+                    Online
+                </label>
+                <label class="checkbox-label">
+                    <InputCheckbox @bind-Value="NewSlot.IsOnSiteAvailable" />
+                    OnSite
+                </label>
+            </div>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="AddScheduleSlot">Add Slot</button>
+                <button class="primary-button" type="button" @onclick="SaveScheduleAsync" disabled="@IsBusy">Save Schedule</button>
+            </div>
+            <div class="table-shell">
+                <div class="table-row table-head">
+                    <span>Day</span>
+                    <span>Window</span>
+                    <span>Mode</span>
+                    <span></span>
+                </div>
+                @foreach (var slot in ScheduleEditor)
+                {
+                    <div class="table-row">
+                        <span>@slot.DayOfWeek</span>
+                        <span>@slot.StartTime.ToString("HH\\:mm") - @slot.EndTime.ToString("HH\\:mm")</span>
+                        <span>@ModeLabel(slot)</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => RemoveScheduleSlot(slot)">Remove</button>
+                    </div>
+                }
+            </div>
+        }
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Reviews And Availability</h2>
+            <span class="status-pill blue">@AvailableSlots.Count slots</span>
+        </div>
+        @if (SelectedDoctor is null)
+        {
+            <p class="tone-muted">Choose a doctor to review patient sentiment and slot inventory.</p>
+        }
+        else
+        {
+            <div class="entity-form">
+                <label>Slot Date<input type="date" value="@SlotDateText" @onchange="OnSlotDateChanged" /></label>
+                <label>
+                    Appointment Type
+                    <InputSelect @bind-Value="SlotAppointmentType">
+                        <option>Online</option>
+                        <option>OnSite</option>
+                    </InputSelect>
+                </label>
+            </div>
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="LoadAvailabilityAsync" disabled="@IsBusy">Load Availability</button>
+                <button class="secondary-button" type="button" @onclick="LoadRatingSummaryAsync" disabled="@IsBusy">Refresh Reviews</button>
+            </div>
+
+            @if (RatingSummary is not null)
+            {
+                <div class="dispense-summary">
+                    <strong>@RatingSummary.AverageRating.ToString("0.0") average rating</strong>
+                    <span>@RatingSummary.RatingCount total reviews</span>
+                    <span>@AvailableSlots.Count open slots</span>
+                </div>
+            }
+
+            @if (AvailableSlots.Count > 0)
+            {
+                <div class="table-shell">
+                    @foreach (var slot in AvailableSlots)
+                    {
+                        <div class="table-row">
+                            <span>@slot.StartTime.ToString("HH\\:mm")</span>
+                            <span>@slot.EndTime.ToString("HH\\:mm")</span>
+                            <span>@slot.AppointmentType</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (RatingSummary?.RecentReviews.Count > 0)
+            {
+                <div class="table-shell">
+                    @foreach (var review in RatingSummary.RecentReviews)
+                    {
+                        <div class="table-row">
+                            <span>@review.PatientName</span>
+                            <span>@review.Rating / 5</span>
+                            <span>@DisplayText(review.ReviewText, "No written review")</span>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private static readonly string[] DaysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+    private IReadOnlyList<DoctorModel> DoctorResults { get; set; } = [];
+    private IReadOnlyList<AvailableSlotModel> AvailableSlots { get; set; } = [];
+    private List<DoctorScheduleSlotModel> ScheduleEditor { get; set; } = [];
+    private DoctorModel? SelectedDoctor { get; set; }
+    private DoctorRatingSummaryModel? RatingSummary { get; set; }
+    private UpdateDoctorProfileModel DoctorProfileForm { get; set; } = new();
+    private VerifyDoctorModel VerifyForm { get; set; } = new();
+    private DoctorScheduleSlotModel NewSlot { get; set; } = new();
+    private string SpecializationFilter { get; set; } = string.Empty;
+    private string CityFilter { get; set; } = string.Empty;
+    private decimal? MaxFeeFilter { get; set; }
+    private DateOnly SlotDate { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(1));
+    private string SlotDateText { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(1)).ToString("yyyy-MM-dd");
+    private string SlotAppointmentType { get; set; } = "Online";
+    private string NewSlotStartTimeText { get; set; } = "09:00";
+    private string NewSlotEndTimeText { get; set; } = "13:00";
+    private bool IsBusy { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+    private string VerificationPillText => SelectedDoctor is null ? "No doctor" : SelectedDoctor.IsVerified ? "Verified" : "Pending";
+    private string VerificationPillClass => SelectedDoctor is null ? "status-pill blue" : SelectedDoctor.IsVerified ? "status-pill green" : "status-pill amber";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDoctorsAsync();
+    }
+
+    private async Task LoadDoctorsAsync()
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(SpecializationFilter))
+        {
+            query.Add($"specialization={Uri.EscapeDataString(SpecializationFilter)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(CityFilter))
+        {
+            query.Add($"city={Uri.EscapeDataString(CityFilter)}");
+        }
+
+        if (MaxFeeFilter.HasValue)
+        {
+            query.Add($"maxFee={MaxFeeFilter.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+
+        var url = query.Count == 0 ? "api/v1/doctors" : $"api/v1/doctors?{string.Join("&", query)}";
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<DoctorModel>>(url);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            DoctorResults = result.Data;
+            SetStatus("Doctor discovery refreshed.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor discovery unavailable.", "tone-amber");
+    }
+
+    private async Task SelectDoctorAsync(Guid doctorId)
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<DoctorModel>($"api/v1/doctors/{doctorId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedDoctor = result.Data;
+            ApplyDoctor(result.Data);
+            await LoadRatingSummaryAsync();
+            await LoadAvailabilityAsync();
+            SetStatus("Doctor profile loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor profile unavailable.", "tone-amber");
+    }
+
+    private async Task SaveDoctorProfileAsync()
+    {
+        if (SelectedDoctor is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdateDoctorProfileModel, DoctorModel>($"api/v1/doctors/{SelectedDoctor.Id}/profile", DoctorProfileForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedDoctor = result.Data;
+            ApplyDoctor(result.Data);
+            DoctorResults = DoctorResults.Select(x => x.Id == result.Data.Id ? result.Data : x).ToArray();
+            SetStatus("Doctor profile updated.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor profile update failed.", "tone-amber");
+    }
+
+    private async Task UpdateVerificationAsync()
+    {
+        if (SelectedDoctor is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<VerifyDoctorModel, DoctorModel>($"api/v1/doctors/{SelectedDoctor.Id}/verify", VerifyForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedDoctor = result.Data;
+            ApplyDoctor(result.Data);
+            DoctorResults = DoctorResults.Select(x => x.Id == result.Data.Id ? result.Data : x).ToArray();
+            SetStatus("Doctor verification updated.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor verification update failed.", "tone-amber");
+    }
+
+    private async Task LoadRatingSummaryAsync()
+    {
+        if (SelectedDoctor is null)
+        {
+            return;
+        }
+
+        var result = await ApiClient.GetAsync<DoctorRatingSummaryModel>($"api/v1/doctors/{SelectedDoctor.Id}/rating");
+        if (result?.Success == true && result.Data is not null)
+        {
+            RatingSummary = result.Data;
+        }
+    }
+
+    private async Task LoadAvailabilityAsync()
+    {
+        if (SelectedDoctor is null)
+        {
+            return;
+        }
+
+        var result = await ApiClient.GetAsync<AvailableSlotModel[]>($"api/v1/doctors/{SelectedDoctor.Id}/available-slots?date={SlotDate:yyyy-MM-dd}&appointmentType={Uri.EscapeDataString(SlotAppointmentType)}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            AvailableSlots = result.Data;
+            SetStatus("Doctor availability loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor availability unavailable.", "tone-amber");
+    }
+
+    private void AddScheduleSlot()
+    {
+        ScheduleEditor.Add(new DoctorScheduleSlotModel
+        {
+            DayOfWeek = NewSlot.DayOfWeek,
+            StartTime = NewSlot.StartTime,
+            EndTime = NewSlot.EndTime,
+            SlotDurationMinutes = NewSlot.SlotDurationMinutes,
+            IsOnlineAvailable = NewSlot.IsOnlineAvailable,
+            IsOnSiteAvailable = NewSlot.IsOnSiteAvailable
+        });
+        NewSlot = new DoctorScheduleSlotModel();
+        NewSlotStartTimeText = NewSlot.StartTime.ToString("HH\\:mm");
+        NewSlotEndTimeText = NewSlot.EndTime.ToString("HH\\:mm");
+        SetStatus("Schedule slot queued for save.", "tone-blue");
+    }
+
+    private void RemoveScheduleSlot(DoctorScheduleSlotModel slot)
+    {
+        ScheduleEditor.Remove(slot);
+    }
+
+    private async Task SaveScheduleAsync()
+    {
+        if (SelectedDoctor is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<SetDoctorScheduleModel, DoctorModel>(
+            $"api/v1/doctors/{SelectedDoctor.Id}/schedule",
+            new SetDoctorScheduleModel { Slots = ScheduleEditor.ToArray() });
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedDoctor = result.Data;
+            ApplyDoctor(result.Data);
+            DoctorResults = DoctorResults.Select(x => x.Id == result.Data.Id ? result.Data : x).ToArray();
+            SetStatus("Doctor schedule saved.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor schedule save failed.", "tone-amber");
+    }
+
+    private void ApplyDoctor(DoctorModel doctor)
+    {
+        DoctorProfileForm = new UpdateDoctorProfileModel
+        {
+            Specialization = doctor.Specialization,
+            Qualification = doctor.Qualification,
+            Biography = doctor.Biography,
+            City = doctor.City,
+            ConsultationFee = doctor.ConsultationFee,
+            IsActive = doctor.IsActive
+        };
+        VerifyForm = new VerifyDoctorModel { IsVerified = doctor.IsVerified };
+        ScheduleEditor = doctor.Schedules
+            .Select(slot => new DoctorScheduleSlotModel
+            {
+                DayOfWeek = slot.DayOfWeek,
+                StartTime = slot.StartTime,
+                EndTime = slot.EndTime,
+                SlotDurationMinutes = slot.SlotDurationMinutes,
+                IsOnlineAvailable = slot.IsOnlineAvailable,
+                IsOnSiteAvailable = slot.IsOnSiteAvailable
+            })
+            .ToList();
+    }
+
+    private void OnSlotDateChanged(ChangeEventArgs args)
+    {
+        SlotDateText = args.Value?.ToString() ?? string.Empty;
+        if (DateOnly.TryParse(SlotDateText, out var parsed))
+        {
+            SlotDate = parsed;
+        }
+    }
+
+    private void OnNewSlotStartChanged(ChangeEventArgs args)
+    {
+        NewSlotStartTimeText = args.Value?.ToString() ?? string.Empty;
+        if (TimeOnly.TryParse(NewSlotStartTimeText, out var parsed))
+        {
+            NewSlot.StartTime = parsed;
+        }
+    }
+
+    private void OnNewSlotEndChanged(ChangeEventArgs args)
+    {
+        NewSlotEndTimeText = args.Value?.ToString() ?? string.Empty;
+        if (TimeOnly.TryParse(NewSlotEndTimeText, out var parsed))
+        {
+            NewSlot.EndTime = parsed;
+        }
+    }
+
+    private void ResetDoctorSearch()
+    {
+        SpecializationFilter = string.Empty;
+        CityFilter = string.Empty;
+        MaxFeeFilter = null;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private static string DisplayText(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static string ModeLabel(DoctorScheduleSlotModel slot)
+    {
+        if (slot.IsOnlineAvailable && slot.IsOnSiteAvailable)
+        {
+            return "Online + OnSite";
+        }
+
+        if (slot.IsOnlineAvailable)
+        {
+            return "Online";
+        }
+
+        if (slot.IsOnSiteAvailable)
+        {
+            return "OnSite";
+        }
+
+        return "Inactive";
+    }
+}

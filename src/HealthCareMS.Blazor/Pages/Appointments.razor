@@ -1,0 +1,479 @@
+@page "/appointments"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Appointments Workspace</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Appointment Operations</p>
+        <h1>Appointment Booking And Lifecycle Workspace</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="SearchAppointmentsAsync" disabled="@IsBusy">Search Appointments</button>
+        <button class="secondary-button" type="button" @onclick="ReloadSelectedAppointmentAsync" disabled="@(IsBusy || SelectedAppointment is null)">Reload Detail</button>
+        <button class="primary-button" type="button" @onclick="BookAppointmentAsync" disabled="@IsBusy">Book Appointment</button>
+    </div>
+</section>
+
+@if (SelectedAppointment is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card">
+            <span class="metric-label">Appointment</span>
+            <strong>@SelectedAppointment.AppointmentNumber</strong>
+            <span class="@StatusTone(SelectedAppointment.Status)">@SelectedAppointment.Status</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Patient</span>
+            <strong>@SelectedAppointment.PatientName</strong>
+            <span class="tone-blue">@SelectedAppointment.Type</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Doctor</span>
+            <strong>@SelectedAppointment.DoctorName</strong>
+            <span class="tone-green">@SelectedAppointment.ConsultationFee.ToString("0") fee</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Queue / Payment</span>
+            <strong>@DisplayText(SelectedAppointment.QueueNumber?.ToString(), "No queue")</strong>
+            <span class="tone-muted">@SelectedAppointment.PaymentStatus</span>
+        </article>
+    </section>
+}
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Booking Studio</h2>
+            <span class="status-pill green">New Booking</span>
+        </div>
+        <div class="entity-form">
+            <label>Patient Id<InputText @bind-Value="BookPatientIdText" /></label>
+            <label>Doctor Id<InputText @bind-Value="BookDoctorIdText" /></label>
+            <label>Scheduled At<input type="datetime-local" value="@BookScheduledAtText" @onchange="OnBookScheduledAtChanged" /></label>
+            <label>
+                Type
+                <InputSelect @bind-Value="BookForm.Type">
+                    <option>OnSite</option>
+                    <option>Online</option>
+                </InputSelect>
+            </label>
+            <label>Duration Minutes<InputNumber @bind-Value="BookForm.DurationMinutes" /></label>
+            <label>
+                Priority
+                <InputSelect @bind-Value="BookForm.Priority">
+                    <option>Normal</option>
+                    <option>High</option>
+                    <option>Urgent</option>
+                </InputSelect>
+            </label>
+            <label>Reason For Visit<InputTextArea @bind-Value="BookForm.ReasonForVisit" /></label>
+            <label>Patient Notes<InputTextArea @bind-Value="BookForm.PatientNotes" /></label>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Search And Timeline</h2>
+            <span class="status-pill blue">@AppointmentResults.Count</span>
+        </div>
+        <div class="entity-form">
+            <label>Patient Id<InputText @bind-Value="SearchPatientIdText" /></label>
+            <label>Doctor Id<InputText @bind-Value="SearchDoctorIdText" /></label>
+            <label>
+                Status
+                <InputSelect @bind-Value="StatusFilter">
+                    <option value="">All</option>
+                    <option>Pending</option>
+                    <option>Confirmed</option>
+                    <option>InProgress</option>
+                    <option>Completed</option>
+                    <option>Cancelled</option>
+                    <option>NoShow</option>
+                </InputSelect>
+            </label>
+            <label>Date<input type="date" value="@SearchDateText" @onchange="OnSearchDateChanged" /></label>
+        </div>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="SearchAppointmentsAsync" disabled="@IsBusy">Search</button>
+            <button class="text-button" type="button" @onclick="ResetSearchFilters">Reset</button>
+        </div>
+        <div class="table-shell">
+            <div class="table-row table-head">
+                <span>Schedule</span>
+                <span>Patient</span>
+                <span>Doctor</span>
+                <span>Status</span>
+                <span></span>
+            </div>
+            @foreach (var appointment in AppointmentResults)
+            {
+                <div class="table-row">
+                    <span>@appointment.ScheduledAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                    <span>@appointment.PatientName</span>
+                    <span>@appointment.DoctorName</span>
+                    <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SelectAppointmentAsync(appointment.Id)">Open</button>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Lifecycle Actions</h2>
+            <span class="status-pill amber">@DisplayText(SelectedAppointment?.Status, "No selection")</span>
+        </div>
+        @if (SelectedAppointment is null)
+        {
+            <p class="tone-muted">Select an appointment to manage confirm, cancel, reschedule, and completion actions.</p>
+        }
+        else
+        {
+            <div class="dispense-summary">
+                <strong>@SelectedAppointment.PatientName -> @SelectedAppointment.DoctorName</strong>
+                <span>@SelectedAppointment.ReasonForVisit</span>
+                <span>@SelectedAppointment.ScheduledAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+            </div>
+
+            <div class="panel-toolbar action-cluster">
+                <button class="secondary-button" type="button" @onclick="ConfirmAppointmentAsync" disabled="@IsBusy">Confirm</button>
+            </div>
+
+            <div class="entity-form">
+                <label>Cancellation Reason<InputTextArea @bind-Value="CancelForm.CancellationReason" /></label>
+                <label>Cancelled By<InputText @bind-Value="CancelForm.CancelledBy" /></label>
+                <button class="secondary-button" type="button" @onclick="CancelAppointmentAsync" disabled="@IsBusy">Cancel Appointment</button>
+            </div>
+
+            <div class="entity-form">
+                <label>Reschedule At<input type="datetime-local" value="@RescheduleScheduledAtText" @onchange="OnRescheduleScheduledAtChanged" /></label>
+                <label>Duration<InputNumber @bind-Value="RescheduleForm.DurationMinutes" /></label>
+                <label>Reason<InputTextArea @bind-Value="RescheduleForm.Reason" /></label>
+                <button class="secondary-button" type="button" @onclick="RescheduleAppointmentAsync" disabled="@IsBusy">Reschedule</button>
+            </div>
+
+            <div class="entity-form">
+                <label>Diagnosis<InputTextArea @bind-Value="CompleteForm.Diagnosis" /></label>
+                <label>Clinical Notes<InputTextArea @bind-Value="CompleteForm.ClinicalNotes" /></label>
+                <label>Follow Up<input type="date" value="@FollowUpDateText" @onchange="OnFollowUpDateChanged" /></label>
+                <button class="primary-button" type="button" @onclick="CompleteAppointmentAsync" disabled="@IsBusy">Complete Consultation</button>
+            </div>
+        }
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Appointment Detail</h2>
+            <span class="status-pill blue">@DisplayText(SelectedAppointment?.Type, "No detail")</span>
+        </div>
+        @if (SelectedAppointment is null)
+        {
+            <p class="tone-muted">Appointment detail will appear here after selection.</p>
+        }
+        else
+        {
+            <div class="table-shell">
+                <div class="table-row"><span>Appointment Number</span><span>@SelectedAppointment.AppointmentNumber</span></div>
+                <div class="table-row"><span>Priority</span><span>@SelectedAppointment.Priority</span></div>
+                <div class="table-row"><span>Meeting Link</span><span>@DisplayText(SelectedAppointment.MeetingLink, "No meeting link")</span></div>
+                <div class="table-row"><span>Diagnosis</span><span>@DisplayText(SelectedAppointment.Diagnosis, "Not completed")</span></div>
+                <div class="table-row"><span>Clinical Notes</span><span>@DisplayText(SelectedAppointment.ClinicalNotes, "Not captured")</span></div>
+                <div class="table-row"><span>Cancellation</span><span>@DisplayText(SelectedAppointment.CancellationReason, "Not cancelled")</span></div>
+                <div class="table-row"><span>Created</span><span>@SelectedAppointment.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span></div>
+            </div>
+        }
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private IReadOnlyList<AppointmentModel> AppointmentResults { get; set; } = [];
+    private AppointmentModel? SelectedAppointment { get; set; }
+    private BookAppointmentModel BookForm { get; set; } = new();
+    private CancelAppointmentModel CancelForm { get; set; } = new();
+    private RescheduleAppointmentModel RescheduleForm { get; set; } = new();
+    private CompleteAppointmentModel CompleteForm { get; set; } = new();
+    private string BookPatientIdText { get; set; } = string.Empty;
+    private string BookDoctorIdText { get; set; } = string.Empty;
+    private string SearchPatientIdText { get; set; } = string.Empty;
+    private string SearchDoctorIdText { get; set; } = string.Empty;
+    private string SearchDateText { get; set; } = string.Empty;
+    private string BookScheduledAtText { get; set; } = DateTimeOffset.Now.AddDays(1).ToString("yyyy-MM-ddTHH:mm");
+    private string RescheduleScheduledAtText { get; set; } = DateTimeOffset.Now.AddDays(2).ToString("yyyy-MM-ddTHH:mm");
+    private string FollowUpDateText { get; set; } = string.Empty;
+    private string StatusFilter { get; set; } = string.Empty;
+    private DateOnly? SearchDate { get; set; }
+    private bool IsBusy { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task BookAppointmentAsync()
+    {
+        if (!Guid.TryParse(BookPatientIdText, out var patientId) || !Guid.TryParse(BookDoctorIdText, out var doctorId))
+        {
+            SetStatus("Valid patient id and doctor id are required.", "tone-amber");
+            return;
+        }
+
+        BookForm.PatientId = patientId;
+        BookForm.DoctorId = doctorId;
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<BookAppointmentModel, AppointmentModel>("api/v1/appointments", BookForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedAppointment = result.Data;
+            AppointmentResults = [result.Data, .. AppointmentResults.Where(x => x.Id != result.Data.Id)];
+            ApplySelectedAppointment(result.Data);
+            ResetBookingForm();
+            SetStatus("Appointment booked and opened.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Appointment booking failed.", "tone-amber");
+    }
+
+    private async Task SearchAppointmentsAsync()
+    {
+        var query = new List<string>();
+        if (Guid.TryParse(SearchPatientIdText, out var patientId))
+        {
+            query.Add($"patientId={patientId}");
+        }
+
+        if (Guid.TryParse(SearchDoctorIdText, out var doctorId))
+        {
+            query.Add($"doctorId={doctorId}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(StatusFilter))
+        {
+            query.Add($"status={Uri.EscapeDataString(StatusFilter)}");
+        }
+
+        if (SearchDate.HasValue)
+        {
+            query.Add($"date={SearchDate:yyyy-MM-dd}");
+        }
+
+        var url = query.Count == 0 ? "api/v1/appointments" : $"api/v1/appointments?{string.Join("&", query)}";
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<AppointmentModel>>(url);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            AppointmentResults = result.Data.OrderByDescending(x => x.ScheduledAt).ToArray();
+            SetStatus("Appointment search loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Appointment search unavailable.", "tone-amber");
+    }
+
+    private async Task SelectAppointmentAsync(Guid appointmentId)
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<AppointmentModel>($"api/v1/appointments/{appointmentId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedAppointment = result.Data;
+            ApplySelectedAppointment(result.Data);
+            SetStatus("Appointment detail loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Appointment detail unavailable.", "tone-amber");
+    }
+
+    private async Task ReloadSelectedAppointmentAsync()
+    {
+        if (SelectedAppointment is not null)
+        {
+            await SelectAppointmentAsync(SelectedAppointment.Id);
+        }
+    }
+
+    private async Task ConfirmAppointmentAsync()
+    {
+        if (SelectedAppointment is null)
+        {
+            return;
+        }
+
+        await ExecuteLifecycleActionAsync(
+            () => ApiClient.PutAsync<AppointmentModel>($"api/v1/appointments/{SelectedAppointment.Id}/confirm"),
+            "Appointment confirmed.");
+    }
+
+    private async Task CancelAppointmentAsync()
+    {
+        if (SelectedAppointment is null)
+        {
+            return;
+        }
+
+        await ExecuteLifecycleActionAsync(
+            () => ApiClient.PutAsync<CancelAppointmentModel, AppointmentModel>($"api/v1/appointments/{SelectedAppointment.Id}/cancel", CancelForm),
+            "Appointment cancelled.");
+    }
+
+    private async Task RescheduleAppointmentAsync()
+    {
+        if (SelectedAppointment is null)
+        {
+            return;
+        }
+
+        await ExecuteLifecycleActionAsync(
+            () => ApiClient.PutAsync<RescheduleAppointmentModel, AppointmentModel>($"api/v1/appointments/{SelectedAppointment.Id}/reschedule", RescheduleForm),
+            "Appointment rescheduled.");
+    }
+
+    private async Task CompleteAppointmentAsync()
+    {
+        if (SelectedAppointment is null)
+        {
+            return;
+        }
+
+        await ExecuteLifecycleActionAsync(
+            () => ApiClient.PutAsync<CompleteAppointmentModel, AppointmentModel>($"api/v1/appointments/{SelectedAppointment.Id}/complete", CompleteForm),
+            "Appointment completed.");
+    }
+
+    private async Task ExecuteLifecycleActionAsync(
+        Func<Task<HealthCareMS.Shared.Api.ApiResponse<AppointmentModel>?>> action,
+        string successMessage)
+    {
+        IsBusy = true;
+        var result = await action();
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedAppointment = result.Data;
+            ApplySelectedAppointment(result.Data);
+            AppointmentResults = AppointmentResults.Select(x => x.Id == result.Data.Id ? result.Data : x).ToArray();
+            SetStatus(successMessage, "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Appointment action failed.", "tone-amber");
+    }
+
+    private void ApplySelectedAppointment(AppointmentModel appointment)
+    {
+        CancelForm = new CancelAppointmentModel
+        {
+            CancellationReason = appointment.CancellationReason ?? string.Empty,
+            CancelledBy = string.IsNullOrWhiteSpace(appointment.CancelledBy) ? "Front Desk" : appointment.CancelledBy
+        };
+        RescheduleForm = new RescheduleAppointmentModel
+        {
+            ScheduledAt = appointment.ScheduledAt.AddDays(1),
+            DurationMinutes = appointment.DurationMinutes,
+            Reason = "Requested schedule adjustment."
+        };
+        CompleteForm = new CompleteAppointmentModel
+        {
+            Diagnosis = appointment.Diagnosis ?? string.Empty,
+            ClinicalNotes = appointment.ClinicalNotes,
+            FollowUpDate = appointment.FollowUpDate
+        };
+        RescheduleScheduledAtText = RescheduleForm.ScheduledAt.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
+        FollowUpDateText = appointment.FollowUpDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+    }
+
+    private void ResetBookingForm()
+    {
+        BookForm = new BookAppointmentModel();
+        BookPatientIdText = string.Empty;
+        BookDoctorIdText = string.Empty;
+        BookScheduledAtText = BookForm.ScheduledAt.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
+    }
+
+    private void OnBookScheduledAtChanged(ChangeEventArgs args)
+    {
+        BookScheduledAtText = args.Value?.ToString() ?? string.Empty;
+        if (DateTimeOffset.TryParse(BookScheduledAtText, out var parsed))
+        {
+            BookForm.ScheduledAt = parsed;
+        }
+    }
+
+    private void OnRescheduleScheduledAtChanged(ChangeEventArgs args)
+    {
+        RescheduleScheduledAtText = args.Value?.ToString() ?? string.Empty;
+        if (DateTimeOffset.TryParse(RescheduleScheduledAtText, out var parsed))
+        {
+            RescheduleForm.ScheduledAt = parsed;
+        }
+    }
+
+    private void OnSearchDateChanged(ChangeEventArgs args)
+    {
+        SearchDateText = args.Value?.ToString() ?? string.Empty;
+        SearchDate = DateOnly.TryParse(SearchDateText, out var parsed) ? parsed : null;
+    }
+
+    private void OnFollowUpDateChanged(ChangeEventArgs args)
+    {
+        FollowUpDateText = args.Value?.ToString() ?? string.Empty;
+        CompleteForm.FollowUpDate = DateOnly.TryParse(FollowUpDateText, out var parsed) ? parsed : null;
+    }
+
+    private void ResetSearchFilters()
+    {
+        SearchPatientIdText = string.Empty;
+        SearchDoctorIdText = string.Empty;
+        SearchDateText = string.Empty;
+        StatusFilter = string.Empty;
+        SearchDate = null;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private static string DisplayText(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static string StatusPill(string status)
+    {
+        return status switch
+        {
+            "Completed" => "status-pill green",
+            "Confirmed" or "InProgress" => "status-pill blue",
+            "Cancelled" or "NoShow" => "status-pill amber",
+            _ => "status-pill blue"
+        };
+    }
+
+    private static string StatusTone(string status)
+    {
+        return status switch
+        {
+            "Completed" => "tone-green",
+            "Cancelled" or "NoShow" => "tone-amber",
+            _ => "tone-blue"
+        };
+    }
+}

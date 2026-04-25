@@ -24,6 +24,27 @@ public sealed class DatabaseSeeder(
     ILogger<DatabaseSeeder> logger)
 {
     private const string NavigationSettingKey = NavigationDefaults.SettingKey;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly NavigationIconSeed[] DefaultNavigationIcons =
+    [
+        new("dashboard", "Dashboard", "\u0688\u06cc\u0634 \u0628\u0648\u0631\u0688", "bi bi-grid-1x2-fill", "D", "Dashboard"),
+        new("notifications", "Notifications", "\u0646\u0648\u0679\u06cc\u0641\u06cc\u06a9\u06cc\u0634\u0646\u0632", "bi bi-bell-fill", "N", "Notifications"),
+        new("tenants", "Tenants", "\u0679\u06cc\u0646\u0646\u0679\u0633", "bi bi-buildings-fill", "T", "Tenants"),
+        new("doctors", "Doctors", "\u0688\u0627\u06a9\u0679\u0631\u0632", "bi bi-person-badge-fill", "V", "Doctors"),
+        new("config", "Configuration", "\u06a9\u0646\u0641\u06cc\u06af\u0631\u06cc\u0634\u0646", "bi bi-sliders2", "K", "Configuration"),
+        new("admin-tools", "Admin Tools", "\u0627\u06cc\u0688\u0645\u0646 \u0679\u0648\u0644\u0632", "bi bi-ui-checks-grid", "A", "Admin tools"),
+        new("doctor-portal", "Doctor Portal", "\u0688\u0627\u06a9\u0679\u0631 \u067e\u0648\u0631\u0679\u0644", "bi bi-heart-pulse-fill", "P", "Doctor portal"),
+        new("patient-portal", "Patient Portal", "\u067e\u06cc\u0634\u0646\u0679 \u067e\u0648\u0631\u0679\u0644", "bi bi-person-lines-fill", "U", "Patient portal"),
+        new("payments", "Payments", "\u067e\u06cc\u0645\u0646\u0679\u0633", "bi bi-credit-card-2-front-fill", "M", "Payments"),
+        new("pharmacy", "Pharmacy", "\u0641\u0627\u0631\u0645\u06cc\u0633\u06cc", "bi bi-capsule-pill", "R", "Pharmacy"),
+        new("reports", "Reports", "\u0631\u067e\u0648\u0631\u0679\u0633", "bi bi-bar-chart-line-fill", "B", "Reports"),
+        new("lab", "Laboratory", "\u0644\u06cc\u0628\u0627\u0631\u0679\u0631\u06cc", "bi bi-clipboard2-pulse-fill", "L", "Laboratory"),
+        new("timeline", "Timeline", "\u0679\u0627\u0626\u0645 \u0644\u0627\u0626\u0646", "bi bi-clock-history", "H", "Timeline"),
+        new("analytics", "Analytics", "\u0627\u06cc\u0646\u0627\u0644\u06cc\u0679\u06a9\u0633", "bi bi-graph-up-arrow", "G", "Analytics"),
+        new("security", "Security", "\u0633\u06a9\u06cc\u0648\u0631\u0679\u06cc", "bi bi-shield-lock-fill", "S", "Security"),
+        new("discovery", "Discovery", "\u0688\u0633\u06a9\u0648\u0631\u06cc", "bi bi-compass-fill", "C", "Discovery"),
+        new("help", "Help Center", "\u06c1\u06cc\u0644\u067e \u0633\u06cc\u0646\u0679\u0631", "bi bi-life-preserver", "?", "Help center")
+    ];
 
     public async Task SeedAsync(bool seedDemoData, CancellationToken cancellationToken = default)
     {
@@ -31,7 +52,7 @@ public sealed class DatabaseSeeder(
         await SeedRolesAsync(cancellationToken);
         await SeedSuperAdminAsync(cancellationToken);
         await SeedSystemSettingsAsync(cancellationToken);
-        await SeedNavigationEntitiesAsync(cancellationToken);
+        await SeedEnterpriseNavigationAsync(cancellationToken);
         if (seedDemoData)
         {
             await SeedAllDomainTablesAsync(cancellationToken);
@@ -398,6 +419,274 @@ public sealed class DatabaseSeeder(
             ParseNavigationItemRecursive(group, childElement, key, output);
         }
     }
+
+    private async Task SeedEnterpriseNavigationAsync(CancellationToken cancellationToken)
+    {
+        var configuredPayload = await LoadNavigationSeedPayloadAsync(cancellationToken);
+        var defaultPayload = ReadNavigationSeedPayload(NavigationDefaults.ConfigurationJson) ?? new NavigationSeedPayload([]);
+        var mergedPayload = MergeNavigationSeedPayloads(configuredPayload, defaultPayload);
+
+        var groups = await dbContext.NavigationGroups
+            .IgnoreQueryFilters()
+            .Where(x => x.TenantId == null)
+            .ToListAsync(cancellationToken);
+        var groupLookup = groups.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
+
+        var itemLookups = new Dictionary<Guid, Dictionary<string, NavigationItem>>();
+        if (groups.Count > 0)
+        {
+            var groupIds = groups.Select(x => x.Id).ToArray();
+            var items = await dbContext.NavigationItems
+                .IgnoreQueryFilters()
+                .Where(x => groupIds.Contains(x.NavigationGroupId))
+                .ToListAsync(cancellationToken);
+
+            foreach (var group in groups)
+            {
+                itemLookups[group.Id] = items
+                    .Where(x => x.NavigationGroupId == group.Id)
+                    .ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        var hasChanges = false;
+        foreach (var groupPayload in mergedPayload.Groups.OrderBy(x => x.SortOrder))
+        {
+            var groupKey = NormalizeNavigationKey(groupPayload.Key);
+            if (groupKey is null)
+            {
+                continue;
+            }
+
+            if (!groupLookup.TryGetValue(groupKey, out var group))
+            {
+                var labelEn = ResolveNavigationLabel(groupPayload.Labels.En, groupPayload.Labels.Ur, groupKey);
+                group = new NavigationGroup
+                {
+                    Key = groupKey,
+                    LabelEn = labelEn,
+                    LabelUr = ResolveNavigationLabel(groupPayload.Labels.Ur, labelEn, labelEn),
+                    SortOrder = groupPayload.SortOrder,
+                    IsActive = true
+                };
+                dbContext.NavigationGroups.Add(group);
+                groupLookup[group.Key] = group;
+                itemLookups[group.Id] = new Dictionary<string, NavigationItem>(StringComparer.OrdinalIgnoreCase);
+                hasChanges = true;
+            }
+            else if (group.IsDeleted || !group.IsActive)
+            {
+                continue;
+            }
+
+            EnsureNavigationSeedItems(group, groupPayload.Items, null, itemLookups[group.Id], ref hasChanges);
+        }
+
+        var existingIconKeys = (await dbContext.NavigationIcons
+                .IgnoreQueryFilters()
+                .Select(x => x.Key)
+                .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var icon in DefaultNavigationIcons.Where(x => !existingIconKeys.Contains(x.Key)))
+        {
+            dbContext.NavigationIcons.Add(new NavigationIcon
+            {
+                Key = icon.Key,
+                LabelEn = icon.LabelEn,
+                LabelUr = icon.LabelUr,
+                CssClass = icon.CssClass,
+                Symbol = icon.Symbol,
+                Description = icon.Description,
+                IsActive = true
+            });
+            hasChanges = true;
+        }
+
+        if (hasChanges)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task<NavigationSeedPayload?> LoadNavigationSeedPayloadAsync(CancellationToken cancellationToken)
+    {
+        var settingsJson = await dbContext.SystemSettings
+            .AsNoTracking()
+            .Where(x => x.SettingKey == NavigationSettingKey)
+            .Select(x => x.Value)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return ReadNavigationSeedPayload(settingsJson);
+    }
+
+    private void EnsureNavigationSeedItems(
+        NavigationGroup group,
+        IReadOnlyList<NavigationSeedItem>? payloadItems,
+        NavigationItem? parentItem,
+        IDictionary<string, NavigationItem> itemLookup,
+        ref bool hasChanges)
+    {
+        foreach (var itemPayload in (payloadItems ?? []).OrderBy(x => x.SortOrder))
+        {
+            var itemKey = NormalizeNavigationKey(itemPayload.Key);
+            if (itemKey is null)
+            {
+                continue;
+            }
+
+            if (!itemLookup.TryGetValue(itemKey, out var item))
+            {
+                var labelEn = ResolveNavigationLabel(itemPayload.Label.En, itemPayload.Label.Ur, itemKey);
+                item = new NavigationItem
+                {
+                    NavigationGroupId = group.Id,
+                    ParentItem = parentItem,
+                    ParentItemId = parentItem?.Id,
+                    Key = itemKey,
+                    LabelEn = labelEn,
+                    LabelUr = ResolveNavigationLabel(itemPayload.Label.Ur, labelEn, labelEn),
+                    Icon = string.IsNullOrWhiteSpace(itemPayload.Icon) ? "?" : itemPayload.Icon.Trim(),
+                    Route = itemPayload.Route?.Trim() ?? string.Empty,
+                    SortOrder = itemPayload.SortOrder,
+                    RequiredPermissionsJson = SerializeNavigationPermissions(itemPayload.RequiredPermissions),
+                    IsActive = true
+                };
+                dbContext.NavigationItems.Add(item);
+                itemLookup[item.Key] = item;
+                hasChanges = true;
+            }
+
+            EnsureNavigationSeedItems(group, itemPayload.Children, item, itemLookup, ref hasChanges);
+        }
+    }
+
+    private static NavigationSeedPayload MergeNavigationSeedPayloads(
+        NavigationSeedPayload? configuredPayload,
+        NavigationSeedPayload defaultPayload)
+    {
+        if (configuredPayload?.Groups is null || configuredPayload.Groups.Count == 0)
+        {
+            return defaultPayload;
+        }
+
+        var groups = configuredPayload.Groups.ToList();
+        foreach (var defaultGroup in defaultPayload.Groups)
+        {
+            var index = groups.FindIndex(x => string.Equals(x.Key, defaultGroup.Key, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+            {
+                groups[index] = groups[index] with
+                {
+                    Items = MergeNavigationSeedItems(groups[index].Items, defaultGroup.Items)
+                };
+                continue;
+            }
+
+            groups.Add(defaultGroup);
+        }
+
+        return new NavigationSeedPayload(groups.OrderBy(x => x.SortOrder).ToArray());
+    }
+
+    private static IReadOnlyList<NavigationSeedItem> MergeNavigationSeedItems(
+        IReadOnlyList<NavigationSeedItem>? configuredItems,
+        IReadOnlyList<NavigationSeedItem>? defaultItems)
+    {
+        var items = (configuredItems ?? []).ToList();
+        foreach (var defaultItem in defaultItems ?? [])
+        {
+            var index = items.FindIndex(x => string.Equals(x.Key, defaultItem.Key, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+            {
+                items[index] = items[index] with
+                {
+                    Children = MergeNavigationSeedItems(items[index].Children, defaultItem.Children)
+                };
+                continue;
+            }
+
+            items.Add(defaultItem);
+        }
+
+        return items.OrderBy(x => x.SortOrder).ToArray();
+    }
+
+    private static NavigationSeedPayload? ReadNavigationSeedPayload(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<NavigationSeedPayload>(json, JsonOptions);
+            return payload?.Groups is { Count: > 0 } ? payload : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string SerializeNavigationPermissions(IReadOnlyList<string>? permissions)
+    {
+        var normalized = (permissions ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return JsonSerializer.Serialize(normalized, JsonOptions);
+    }
+
+    private static string? NormalizeNavigationKey(string? key)
+    {
+        return string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+    }
+
+    private static string ResolveNavigationLabel(string? preferred, string? secondary, string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            return preferred.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(secondary))
+        {
+            return secondary.Trim();
+        }
+
+        return fallback;
+    }
+
+    private sealed record NavigationSeedPayload(IReadOnlyList<NavigationSeedGroup> Groups);
+
+    private sealed record NavigationSeedGroup(
+        string Key,
+        int SortOrder,
+        NavigationSeedLabel Labels,
+        IReadOnlyList<NavigationSeedItem> Items);
+
+    private sealed record NavigationSeedItem(
+        string Key,
+        NavigationSeedLabel Label,
+        string? Icon,
+        string? Route,
+        int SortOrder,
+        IReadOnlyList<string>? RequiredPermissions,
+        IReadOnlyList<NavigationSeedItem>? Children);
+
+    private sealed record NavigationSeedLabel(string? En, string? Ur);
+
+    private sealed record NavigationIconSeed(
+        string Key,
+        string LabelEn,
+        string LabelUr,
+        string CssClass,
+        string Symbol,
+        string Description);
 
     private async Task SeedAllDomainTablesAsync(CancellationToken cancellationToken)
     {

@@ -93,6 +93,22 @@
     </div>
 </section>
 
+<section class="panel">
+    <div class="panel-header">
+        <h2>Core Workspaces</h2>
+        <span class="status-pill blue">Operational</span>
+    </div>
+    <div class="module-grid">
+        @foreach (var item in CoreWorkspaces)
+        {
+            <a class="module-tile" href="@item.Route">
+                <strong>@item.Name</strong>
+                <span>@item.Caption</span>
+            </a>
+        }
+    </div>
+</section>
+
 @code {
     private readonly DashboardStat[] Stats =
     [
@@ -141,6 +157,13 @@
         new("Security Center", "/security", "2FA, sessions, login history"),
         new("Doctor Discovery", "/doctor-discovery", "Best-match recommendation engine"),
         new("Help Center", "/help", "Guides and rollout handover")
+    ];
+
+    private readonly LaunchpadItem[] CoreWorkspaces =
+    [
+        new("Patients Workspace", "/patients", "Registry, medical history, vitals"),
+        new("Doctors Workspace", "/doctors", "Discovery, verification, schedules"),
+        new("Appointments Workspace", "/appointments", "Booking, reschedule, completion")
     ];
 
     private sealed record DashboardStat(string Label, string Value, string Change, string Tone);

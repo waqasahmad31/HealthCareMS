@@ -1,0 +1,487 @@
+@page "/patients"
+@using HealthCareMS.Blazor.Models
+@using HealthCareMS.Blazor.Services
+@inject HealthCareApiClient ApiClient
+
+<PageTitle>Patients Workspace</PageTitle>
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">Patient Operations</p>
+        <h1>Patient Registry And Health Record Workspace</h1>
+    </div>
+    <div class="header-actions">
+        <button class="secondary-button" type="button" @onclick="SearchPatientsAsync" disabled="@IsBusy">Search Registry</button>
+        <button class="secondary-button" type="button" @onclick="ReloadSelectedPatientAsync" disabled="@(IsBusy || SelectedPatient is null)">Reload Patient</button>
+        <button class="primary-button" type="button" @onclick="RegisterPatientAsync" disabled="@IsBusy">Register Patient</button>
+    </div>
+</section>
+
+@if (SelectedPatient is not null)
+{
+    <section class="stats-grid portal-stats">
+        <article class="metric-card">
+            <span class="metric-label">Selected Patient</span>
+            <strong>@SelectedPatient.FirstName @SelectedPatient.LastName</strong>
+            <span class="tone-blue">@SelectedPatient.Gender / @SelectedPatient.BloodGroup</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Vitals Entries</span>
+            <strong>@VitalsHistory.Count</strong>
+            <span class="tone-green">tracked history</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Vital Trends</span>
+            <strong>@VitalTrends.Count</strong>
+            <span class="tone-amber">live indicators</span>
+        </article>
+        <article class="metric-card">
+            <span class="metric-label">Insurance</span>
+            <strong>@DisplayText(SelectedPatient.InsuranceProvider, "Self Pay")</strong>
+            <span class="tone-muted">@DisplayText(SelectedPatient.InsurancePolicyNo, "No policy captured")</span>
+        </article>
+    </section>
+}
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Register And Search</h2>
+            <span class="status-pill blue">@SearchResults.Count results</span>
+        </div>
+        <div class="entity-form">
+            <label>Search Registry<InputText @bind-Value="SearchText" /></label>
+            <label>First Name<InputText @bind-Value="RegisterForm.FirstName" /></label>
+            <label>Last Name<InputText @bind-Value="RegisterForm.LastName" /></label>
+            <label>Email<InputText @bind-Value="RegisterForm.Email" /></label>
+            <label>Password<InputText @bind-Value="RegisterForm.Password" /></label>
+            <label>CNIC<InputText @bind-Value="RegisterForm.Cnic" /></label>
+            <label>Date Of Birth<input type="date" value="@RegisterDateOfBirthText" @onchange="OnRegisterDateOfBirthChanged" /></label>
+            <label>
+                Gender
+                <InputSelect @bind-Value="RegisterForm.Gender">
+                    <option>Female</option>
+                    <option>Male</option>
+                    <option>Other</option>
+                </InputSelect>
+            </label>
+            <label>Blood Group<InputText @bind-Value="RegisterForm.BloodGroup" /></label>
+            <label>Phone<InputText @bind-Value="RegisterForm.Phone" /></label>
+            <label>City<InputText @bind-Value="RegisterForm.AddressCity" /></label>
+            <label>Emergency Contact<InputText @bind-Value="RegisterForm.EmergencyContactName" /></label>
+            <label>Emergency Phone<InputText @bind-Value="RegisterForm.EmergencyContactPhone" /></label>
+        </div>
+        <div class="panel-toolbar action-cluster">
+            <button class="secondary-button" type="button" @onclick="SearchPatientsAsync" disabled="@IsBusy">Search</button>
+            <button class="text-button" type="button" @onclick="ResetRegistrationForm">Reset Form</button>
+        </div>
+        <div class="table-shell">
+            <div class="table-row table-head">
+                <span>Patient</span>
+                <span>Contact</span>
+                <span>Emergency</span>
+                <span></span>
+            </div>
+            @foreach (var patient in SearchResults)
+            {
+                <div class="table-row">
+                    <span>@patient.FirstName @patient.LastName</span>
+                    <span>@DisplayText(patient.Phone, patient.Email)</span>
+                    <span>@DisplayText(patient.EmergencyContactName, "Not captured")</span>
+                    <button class="secondary-button small-button" type="button" @onclick="() => SelectPatientAsync(patient.Id)">Open</button>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Profile And Coverage</h2>
+            <span class="status-pill green">@SelectedPatient?.Id.ToString()[..8]</span>
+        </div>
+        @if (SelectedPatient is null)
+        {
+            <p class="tone-muted">Search or register a patient to activate enterprise profile management.</p>
+        }
+        else
+        {
+            <div class="dispense-summary">
+                <strong>@SelectedPatient.FirstName @SelectedPatient.LastName</strong>
+                <span>@SelectedPatient.Email / @DisplayText(SelectedPatient.Phone, "No phone")</span>
+                <span>@SelectedPatient.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+            </div>
+            <div class="entity-form">
+                <label>First Name<InputText @bind-Value="ProfileForm.FirstName" /></label>
+                <label>Last Name<InputText @bind-Value="ProfileForm.LastName" /></label>
+                <label>Blood Group<InputText @bind-Value="ProfileForm.BloodGroup" /></label>
+                <label>Phone<InputText @bind-Value="ProfileForm.Phone" /></label>
+                <label>Alternate Phone<InputText @bind-Value="ProfileForm.AlternatePhone" /></label>
+                <label>Street<InputText @bind-Value="ProfileForm.AddressStreet" /></label>
+                <label>City<InputText @bind-Value="ProfileForm.AddressCity" /></label>
+                <label>Province<InputText @bind-Value="ProfileForm.AddressProvince" /></label>
+                <label>Postal Code<InputText @bind-Value="ProfileForm.AddressPostalCode" /></label>
+                <label>Emergency Contact<InputText @bind-Value="ProfileForm.EmergencyContactName" /></label>
+                <label>Emergency Phone<InputText @bind-Value="ProfileForm.EmergencyContactPhone" /></label>
+                <label>Emergency Relation<InputText @bind-Value="ProfileForm.EmergencyContactRelation" /></label>
+                <label>Insurance Provider<InputText @bind-Value="ProfileForm.InsuranceProvider" /></label>
+                <label>Insurance Policy<InputText @bind-Value="ProfileForm.InsurancePolicyNo" /></label>
+            </div>
+            <div class="panel-toolbar action-cluster">
+                <button class="primary-button" type="button" @onclick="SaveProfileAsync" disabled="@IsBusy">Save Profile</button>
+            </div>
+        }
+    </article>
+</section>
+
+<section class="portal-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Medical History</h2>
+            <span class="status-pill amber">Clinical Context</span>
+        </div>
+        @if (SelectedPatient is null)
+        {
+            <p class="tone-muted">Patient medical history becomes editable after a patient is selected.</p>
+        }
+        else
+        {
+            <div class="entity-form">
+                <label>Allergies<InputTextArea @bind-Value="MedicalHistoryForm.Allergies" /></label>
+                <label>Chronic Diseases<InputTextArea @bind-Value="MedicalHistoryForm.ChronicDiseases" /></label>
+                <label>Current Medications<InputTextArea @bind-Value="MedicalHistoryForm.CurrentMedications" /></label>
+                <label>Past Surgeries<InputTextArea @bind-Value="MedicalHistoryForm.PastSurgeries" /></label>
+                <label>Family History<InputTextArea @bind-Value="MedicalHistoryForm.FamilyHistory" /></label>
+                <label>
+                    Smoking
+                    <InputSelect @bind-Value="MedicalHistoryForm.SmokingStatus">
+                        <option>Never</option>
+                        <option>Former</option>
+                        <option>Current</option>
+                    </InputSelect>
+                </label>
+                <label>
+                    Alcohol
+                    <InputSelect @bind-Value="MedicalHistoryForm.AlcoholStatus">
+                        <option>Never</option>
+                        <option>Occasional</option>
+                        <option>Regular</option>
+                    </InputSelect>
+                </label>
+            </div>
+            <div class="panel-toolbar action-cluster">
+                <button class="primary-button" type="button" @onclick="SaveMedicalHistoryAsync" disabled="@IsBusy">Save History</button>
+            </div>
+        }
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h2>Vitals Capture</h2>
+            <span class="status-pill blue">@VitalTrends.Count trends</span>
+        </div>
+        @if (SelectedPatient is null)
+        {
+            <p class="tone-muted">Select a patient to capture vitals and trend changes.</p>
+        }
+        else
+        {
+            <div class="entity-form">
+                <label>Recorded At<input type="datetime-local" value="@VitalsRecordedAtText" @onchange="OnVitalsRecordedAtChanged" /></label>
+                <label>Systolic BP<InputNumber @bind-Value="VitalsForm.SystolicBloodPressure" /></label>
+                <label>Diastolic BP<InputNumber @bind-Value="VitalsForm.DiastolicBloodPressure" /></label>
+                <label>Heart Rate<InputNumber @bind-Value="VitalsForm.HeartRate" /></label>
+                <label>Blood Sugar<InputNumber @bind-Value="VitalsForm.BloodSugarMgDl" /></label>
+                <label>Blood Sugar Context<InputText @bind-Value="VitalsForm.BloodSugarContext" /></label>
+                <label>Weight<InputNumber @bind-Value="VitalsForm.WeightKg" /></label>
+                <label>Temperature<InputNumber @bind-Value="VitalsForm.TemperatureCelsius" /></label>
+                <label>Notes<InputTextArea @bind-Value="VitalsForm.Notes" /></label>
+            </div>
+            <div class="panel-toolbar action-cluster">
+                <button class="primary-button" type="button" @onclick="RecordVitalsAsync" disabled="@IsBusy">Record Vitals</button>
+            </div>
+
+            @if (VitalTrends.Count > 0)
+            {
+                <div class="table-shell">
+                    @foreach (var trend in VitalTrends)
+                    {
+                        <div class="table-row">
+                            <span>@trend.Metric</span>
+                            <span>@DisplayNumber(trend.LatestValue) @trend.Unit</span>
+                            <span>@trend.Direction (@DisplayNumber(trend.Change))</span>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </article>
+</section>
+
+@if (SelectedPatient is not null)
+{
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Vitals History</h2>
+            <span class="status-pill blue">@VitalsHistory.Count</span>
+        </div>
+        <div class="table-shell">
+            <div class="table-row table-head">
+                <span>Recorded</span>
+                <span>Blood Pressure</span>
+                <span>Pulse / Sugar</span>
+                <span>Weight / Temp</span>
+            </div>
+            @foreach (var vital in VitalsHistory)
+            {
+                <div class="table-row">
+                    <span>@vital.RecordedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                    <span>@DisplayText($"{vital.SystolicBloodPressure}/{vital.DiastolicBloodPressure}", "Not captured")</span>
+                    <span>@DisplayText(vital.HeartRate?.ToString(), "-") / @DisplayText(vital.BloodSugarMgDl?.ToString("0.0"), "-")</span>
+                    <span>@DisplayText(vital.WeightKg?.ToString("0.0"), "-") / @DisplayText(vital.TemperatureCelsius?.ToString("0.0"), "-")</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <p class="@StatusClass">@StatusMessage</p>
+}
+
+@code {
+    private RegisterPatientModel RegisterForm { get; set; } = new();
+    private UpdatePatientProfileModel ProfileForm { get; set; } = new();
+    private UpdateMedicalHistoryModel MedicalHistoryForm { get; set; } = new();
+    private RecordVitalsModel VitalsForm { get; set; } = new();
+    private IReadOnlyList<PatientModel> SearchResults { get; set; } = [];
+    private IReadOnlyList<PatientVitalsModel> VitalsHistory { get; set; } = [];
+    private IReadOnlyList<VitalTrendModel> VitalTrends { get; set; } = [];
+    private PatientModel? SelectedPatient { get; set; }
+    private string SearchText { get; set; } = string.Empty;
+    private string RegisterDateOfBirthText { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddYears(-25)).ToString("yyyy-MM-dd");
+    private string VitalsRecordedAtText { get; set; } = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm");
+    private bool IsBusy { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "tone-muted";
+
+    private async Task SearchPatientsAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<PatientModel>>($"api/v1/patients?search={Uri.EscapeDataString(SearchText)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SearchResults = result.Data;
+            SetStatus("Patient registry loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient registry unavailable.", "tone-amber");
+    }
+
+    private async Task RegisterPatientAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<RegisterPatientModel, PatientModel>("api/v1/patients/register", RegisterForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedPatient = result.Data;
+            SearchResults = [result.Data, .. SearchResults.Where(x => x.Id != result.Data.Id)];
+            ApplySelectedPatient(result.Data);
+            await LoadPatientClinicalDataAsync(result.Data.Id);
+            ResetRegistrationForm();
+            SetStatus("Patient registered and opened.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient registration failed.", "tone-amber");
+    }
+
+    private async Task SelectPatientAsync(Guid patientId)
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<PatientModel>($"api/v1/patients/{patientId}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedPatient = result.Data;
+            ApplySelectedPatient(result.Data);
+            await LoadPatientClinicalDataAsync(patientId);
+            SetStatus("Patient profile loaded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient profile unavailable.", "tone-amber");
+    }
+
+    private async Task ReloadSelectedPatientAsync()
+    {
+        if (SelectedPatient is not null)
+        {
+            await SelectPatientAsync(SelectedPatient.Id);
+        }
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (SelectedPatient is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdatePatientProfileModel, PatientModel>($"api/v1/patients/{SelectedPatient.Id}/profile", ProfileForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedPatient = result.Data;
+            ApplySelectedPatient(result.Data);
+            SearchResults = SearchResults.Select(x => x.Id == result.Data.Id ? result.Data : x).ToArray();
+            SetStatus("Patient profile updated.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient profile update failed.", "tone-amber");
+    }
+
+    private async Task SaveMedicalHistoryAsync()
+    {
+        if (SelectedPatient is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PutAsync<UpdateMedicalHistoryModel, MedicalHistoryModel>($"api/v1/patients/{SelectedPatient.Id}/medical-history", MedicalHistoryForm);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            SelectedPatient = SelectedPatient with { MedicalHistory = result.Data };
+            ApplyMedicalHistory(result.Data);
+            SearchResults = SearchResults.Select(x => x.Id == SelectedPatient.Id ? SelectedPatient : x).ToArray();
+            SetStatus("Medical history updated.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Medical history update failed.", "tone-amber");
+    }
+
+    private async Task RecordVitalsAsync()
+    {
+        if (SelectedPatient is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        var result = await ApiClient.PostAsync<RecordVitalsModel, PatientVitalsModel>($"api/v1/patients/{SelectedPatient.Id}/vitals", VitalsForm);
+        IsBusy = false;
+
+        if (result?.Success == true)
+        {
+            VitalsForm = new RecordVitalsModel();
+            VitalsRecordedAtText = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm");
+            await LoadPatientClinicalDataAsync(SelectedPatient.Id);
+            SetStatus("Vitals recorded.", "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Vitals recording failed.", "tone-amber");
+    }
+
+    private async Task LoadPatientClinicalDataAsync(Guid patientId)
+    {
+        var vitalsResult = await ApiClient.GetAsync<IReadOnlyList<PatientVitalsModel>>($"api/v1/patients/{patientId}/vitals");
+        if (vitalsResult?.Success == true && vitalsResult.Data is not null)
+        {
+            VitalsHistory = vitalsResult.Data.OrderByDescending(x => x.RecordedAt).ToArray();
+        }
+
+        var trendsResult = await ApiClient.GetAsync<IReadOnlyList<VitalTrendModel>>($"api/v1/patients/{patientId}/vitals/trends");
+        if (trendsResult?.Success == true && trendsResult.Data is not null)
+        {
+            VitalTrends = trendsResult.Data;
+        }
+    }
+
+    private void ApplySelectedPatient(PatientModel patient)
+    {
+        ProfileForm = new UpdatePatientProfileModel
+        {
+            FirstName = patient.FirstName,
+            LastName = patient.LastName,
+            BloodGroup = patient.BloodGroup,
+            Phone = patient.Phone,
+            AlternatePhone = patient.AlternatePhone,
+            AddressStreet = patient.AddressStreet,
+            AddressCity = patient.AddressCity,
+            AddressProvince = patient.AddressProvince,
+            AddressPostalCode = patient.AddressPostalCode,
+            EmergencyContactName = patient.EmergencyContactName,
+            EmergencyContactPhone = patient.EmergencyContactPhone,
+            EmergencyContactRelation = patient.EmergencyContactRelation,
+            InsuranceProvider = patient.InsuranceProvider,
+            InsurancePolicyNo = patient.InsurancePolicyNo
+        };
+
+        ApplyMedicalHistory(patient.MedicalHistory);
+    }
+
+    private void ApplyMedicalHistory(MedicalHistoryModel? history)
+    {
+        MedicalHistoryForm = new UpdateMedicalHistoryModel
+        {
+            Allergies = history?.Allergies ?? string.Empty,
+            ChronicDiseases = history?.ChronicDiseases ?? string.Empty,
+            CurrentMedications = history?.CurrentMedications ?? string.Empty,
+            PastSurgeries = history?.PastSurgeries ?? string.Empty,
+            FamilyHistory = history?.FamilyHistory ?? string.Empty,
+            SmokingStatus = string.IsNullOrWhiteSpace(history?.SmokingStatus) ? "Never" : history!.SmokingStatus,
+            AlcoholStatus = string.IsNullOrWhiteSpace(history?.AlcoholStatus) ? "Never" : history!.AlcoholStatus
+        };
+    }
+
+    private void ResetRegistrationForm()
+    {
+        RegisterForm = new RegisterPatientModel();
+        RegisterDateOfBirthText = RegisterForm.DateOfBirth.ToString("yyyy-MM-dd");
+    }
+
+    private void OnRegisterDateOfBirthChanged(ChangeEventArgs args)
+    {
+        RegisterDateOfBirthText = args.Value?.ToString() ?? string.Empty;
+        if (DateOnly.TryParse(RegisterDateOfBirthText, out var parsed))
+        {
+            RegisterForm.DateOfBirth = parsed;
+        }
+    }
+
+    private void OnVitalsRecordedAtChanged(ChangeEventArgs args)
+    {
+        VitalsRecordedAtText = args.Value?.ToString() ?? string.Empty;
+        VitalsForm.RecordedAt = DateTimeOffset.TryParse(VitalsRecordedAtText, out var parsed) ? parsed : null;
+    }
+
+    private void SetStatus(string message, string statusClass)
+    {
+        StatusMessage = message;
+        StatusClass = statusClass;
+    }
+
+    private static string DisplayText(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static string DisplayNumber(decimal? value)
+    {
+        return value?.ToString("0.##") ?? "-";
+    }
+}
