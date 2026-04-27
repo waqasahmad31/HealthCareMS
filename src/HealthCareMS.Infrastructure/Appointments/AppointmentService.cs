@@ -49,13 +49,16 @@ public sealed class AppointmentService(
             return Result<AppointmentResponse>.Failure(new Error("APT_DOCTOR_UNAVAILABLE", "Doctor is not available for booking."));
         }
 
-        var scheduledAt = request.ScheduledAt.ToUniversalTime();
-        var endAt = scheduledAt.AddMinutes(request.DurationMinutes);
-        var availability = ValidateAvailability(doctor.Schedules, scheduledAt, endAt, parseResult.Value.Type);
+        var requestedScheduledAt = request.ScheduledAt;
+        var requestedEndAt = requestedScheduledAt.AddMinutes(request.DurationMinutes);
+        var availability = ValidateAvailability(doctor.Schedules, requestedScheduledAt, requestedEndAt, parseResult.Value.Type);
         if (availability.IsFailure)
         {
             return Result<AppointmentResponse>.Failure(availability.Error);
         }
+
+        var scheduledAt = requestedScheduledAt.ToUniversalTime();
+        var endAt = requestedEndAt.ToUniversalTime();
 
         var conflictExists = await HasSlotConflictAsync(request.DoctorId, scheduledAt, endAt, excludedAppointmentId: null, cancellationToken);
         if (conflictExists)
@@ -233,13 +236,16 @@ public sealed class AppointmentService(
             return Result<AppointmentResponse>.Failure(scheduleValidation.Error);
         }
 
-        var scheduledAt = request.ScheduledAt.ToUniversalTime();
-        var endAt = scheduledAt.AddMinutes(request.DurationMinutes);
-        var availability = ValidateAvailability(appointment.Doctor.Schedules, scheduledAt, endAt, appointment.Type);
+        var requestedScheduledAt = request.ScheduledAt;
+        var requestedEndAt = requestedScheduledAt.AddMinutes(request.DurationMinutes);
+        var availability = ValidateAvailability(appointment.Doctor.Schedules, requestedScheduledAt, requestedEndAt, appointment.Type);
         if (availability.IsFailure)
         {
             return Result<AppointmentResponse>.Failure(availability.Error);
         }
+
+        var scheduledAt = requestedScheduledAt.ToUniversalTime();
+        var endAt = requestedEndAt.ToUniversalTime();
 
         var conflictExists = await HasSlotConflictAsync(appointment.DoctorId, scheduledAt, endAt, appointment.Id, cancellationToken);
         if (conflictExists)
@@ -429,9 +435,9 @@ public sealed class AppointmentService(
         DateTimeOffset endAt,
         AppointmentType appointmentType)
     {
-        var startTime = TimeOnly.FromDateTime(scheduledAt.UtcDateTime);
-        var endTime = TimeOnly.FromDateTime(endAt.UtcDateTime);
-        var dayOfWeek = scheduledAt.UtcDateTime.DayOfWeek;
+        var startTime = TimeOnly.FromDateTime(scheduledAt.DateTime);
+        var endTime = TimeOnly.FromDateTime(endAt.DateTime);
+        var dayOfWeek = scheduledAt.DateTime.DayOfWeek;
 
         var available = schedules.Any(x =>
             x.DayOfWeek == dayOfWeek

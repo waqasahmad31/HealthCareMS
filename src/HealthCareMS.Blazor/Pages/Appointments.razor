@@ -13,7 +13,7 @@
     <div class="header-actions">
         <button class="secondary-button" type="button" @onclick="SearchAppointmentsAsync" disabled="@IsBusy">Search Appointments</button>
         <button class="secondary-button" type="button" @onclick="ReloadSelectedAppointmentAsync" disabled="@(IsBusy || SelectedAppointment is null)">Reload Detail</button>
-        <button class="primary-button" type="button" @onclick="BookAppointmentAsync" disabled="@IsBusy">Book Appointment</button>
+        <button class="primary-button" type="button" @onclick="BookAppointmentAsync" disabled="@(!CanBookAppointment)">Book Appointment</button>
     </div>
 </section>
 
@@ -46,8 +46,121 @@
 <section class="portal-grid">
     <article class="panel">
         <div class="panel-header">
-            <h2>Booking Studio</h2>
-            <span class="status-pill green">New Booking</span>
+            <div>
+                <p class="panel-subtitle">Guided intake</p>
+                <h2>Booking Studio</h2>
+            </div>
+            <span class="@BookingReadinessClass">@BookingReadinessText</span>
+        </div>
+        <div class="dispense-summary">
+            <strong>@BookingContextHeadline</strong>
+            <span>@BookingContextSummary</span>
+            <span>@DisplayText(BookForm.Priority, "Normal") priority / @BookForm.Type / @BookForm.DurationMinutes min</span>
+        </div>
+        @if (BookingSignals.Count > 0)
+        {
+            <div class="selected-tests">
+                @foreach (var signal in BookingSignals)
+                {
+                    <span>@signal</span>
+                }
+            </div>
+        }
+
+        <div class="lookup-grid">
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-subtitle">Step 1A</p>
+                        <h2>Patient Context</h2>
+                    </div>
+                    <span class="status-pill blue">@BookingPatientResults.Count</span>
+                </div>
+                <div class="entity-form">
+                    <label>Patient Search<InputText @bind-Value="BookingPatientSearchText" placeholder="Name, email, CNIC, or phone" /></label>
+                </div>
+                <div class="panel-toolbar action-cluster">
+                    <button class="secondary-button" type="button" @onclick="LoadBookingPatientsAsync" disabled="@IsBusy">Find Patients</button>
+                    <a class="secondary-button" href="/patients">Open Registry</a>
+                </div>
+                @if (SelectedBookingPatient is not null)
+                {
+                    <div class="dispense-summary">
+                        <strong>@SelectedBookingPatient.FirstName @SelectedBookingPatient.LastName</strong>
+                        <span>@SelectedBookingPatient.Id</span>
+                        <span>@DisplayText(SelectedBookingPatient.Phone, SelectedBookingPatient.Email)</span>
+                    </div>
+                }
+                @if (BookingPatientResults.Count == 0)
+                {
+                    <div class="empty-state">Search patients here instead of manually copying ids into booking.</div>
+                }
+                else
+                {
+                    <div class="table-shell">
+                        @foreach (var patient in BookingPatientResults)
+                        {
+                            <div class="table-row">
+                                <span>@patient.FirstName @patient.LastName</span>
+                                <span>@DisplayText(patient.Phone, patient.Email)</span>
+                                <button class="secondary-button small-button" type="button" @onclick="() => ApplyBookingPatient(patient)">Use</button>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-subtitle">Step 1B</p>
+                        <h2>Doctor Context</h2>
+                    </div>
+                    <span class="status-pill blue">@BookingDoctorResults.Count</span>
+                </div>
+                <div class="entity-form">
+                    <label>Specialization<InputText @bind-Value="BookingDoctorSpecialization" placeholder="Cardiology, Neurology, Pediatrics" /></label>
+                    <label>City<InputText @bind-Value="BookingDoctorCity" placeholder="Karachi, Lahore, Islamabad" /></label>
+                    <label>Max Fee<InputNumber @bind-Value="BookingDoctorMaxFee" /></label>
+                </div>
+                <div class="panel-toolbar action-cluster">
+                    <button class="secondary-button" type="button" @onclick="LoadBookingDoctorsAsync" disabled="@IsBusy">Find Doctors</button>
+                    <a class="secondary-button" href="/doctors">Open Doctors</a>
+                </div>
+                @if (SelectedBookingDoctor is not null)
+                {
+                    <div class="dispense-summary">
+                        <strong>@SelectedBookingDoctor.FullName</strong>
+                        <span>@SelectedBookingDoctor.Id</span>
+                        <span>@SelectedBookingDoctor.Specialization / @SelectedBookingDoctor.City / @SelectedBookingDoctor.ConsultationFee.ToString("0")</span>
+                    </div>
+                }
+                @if (BookingDoctorResults.Count == 0)
+                {
+                    <div class="empty-state">Search doctors here to build appointment context without manual id lookups.</div>
+                }
+                else
+                {
+                    <div class="table-shell">
+                        @foreach (var doctor in BookingDoctorResults)
+                        {
+                            <div class="table-row">
+                                <span>@doctor.FullName<br />@doctor.Specialization</span>
+                                <span>@doctor.City / @doctor.ConsultationFee.ToString("0")</span>
+                                <button class="secondary-button small-button" type="button" @onclick="() => ApplyBookingDoctor(doctor)">Use</button>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+
+        <div class="panel-header">
+            <div>
+                <p class="panel-subtitle">Step 2</p>
+                <h2>Booking Details</h2>
+            </div>
+            <span class="status-pill green">Ready to book</span>
         </div>
         <div class="entity-form">
             <label>Patient Id<InputText @bind-Value="BookPatientIdText" /></label>
@@ -72,12 +185,25 @@
             <label>Reason For Visit<InputTextArea @bind-Value="BookForm.ReasonForVisit" /></label>
             <label>Patient Notes<InputTextArea @bind-Value="BookForm.PatientNotes" /></label>
         </div>
+        <div class="panel-toolbar action-cluster">
+            <button class="primary-button" type="button" @onclick="BookAppointmentAsync" disabled="@(!CanBookAppointment)">Book Appointment</button>
+            <button class="secondary-button" type="button" @onclick="ApplyBookingContextToSearchFilters" disabled="@(IsBusy || !HasBookingContext)">Use As Search Filter</button>
+            <button class="text-button" type="button" @onclick="ResetBookingForm">Reset Booking</button>
+            <button class="text-button" type="button" @onclick="ClearBookingContext">Clear Context</button>
+        </div>
     </article>
 
     <article class="panel">
         <div class="panel-header">
-            <h2>Search And Timeline</h2>
+            <div>
+                <p class="panel-subtitle">Operational search</p>
+                <h2>Search And Timeline</h2>
+            </div>
             <span class="status-pill blue">@AppointmentResults.Count</span>
+        </div>
+        <div class="dispense-summary">
+            <strong>Track lifecycle across the day</strong>
+            <span>Use patient, doctor, status, and date filters to audit active and historical appointment activity.</span>
         </div>
         <div class="entity-form">
             <label>Patient Id<InputText @bind-Value="SearchPatientIdText" /></label>
@@ -98,82 +224,113 @@
         </div>
         <div class="panel-toolbar action-cluster">
             <button class="secondary-button" type="button" @onclick="SearchAppointmentsAsync" disabled="@IsBusy">Search</button>
+            <button class="secondary-button" type="button" @onclick="ApplyBookingContextToSearchFilters" disabled="@(IsBusy || !HasBookingContext)">Use Booking Context</button>
             <button class="text-button" type="button" @onclick="ResetSearchFilters">Reset</button>
         </div>
-        <div class="table-shell">
-            <div class="table-row table-head">
-                <span>Schedule</span>
-                <span>Patient</span>
-                <span>Doctor</span>
-                <span>Status</span>
-                <span></span>
-            </div>
-            @foreach (var appointment in AppointmentResults)
-            {
-                <div class="table-row">
-                    <span>@appointment.ScheduledAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
-                    <span>@appointment.PatientName</span>
-                    <span>@appointment.DoctorName</span>
-                    <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
-                    <button class="secondary-button small-button" type="button" @onclick="() => SelectAppointmentAsync(appointment.Id)">Open</button>
+        @if (AppointmentResults.Count == 0)
+        {
+            <div class="empty-state">No appointments matched the active filters.</div>
+        }
+        else
+        {
+            <div class="table-shell">
+                <div class="table-row table-head">
+                    <span>Schedule</span>
+                    <span>Patient</span>
+                    <span>Doctor</span>
+                    <span>Status</span>
+                    <span></span>
                 </div>
-            }
-        </div>
+                @foreach (var appointment in AppointmentResults)
+                {
+                    <div class="table-row">
+                        <span>@appointment.ScheduledAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                        <span>@appointment.PatientName</span>
+                        <span>@appointment.DoctorName</span>
+                        <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => SelectAppointmentAsync(appointment.Id)">Open</button>
+                    </div>
+                }
+            </div>
+        }
     </article>
 </section>
 
 <section class="portal-grid">
     <article class="panel">
         <div class="panel-header">
-            <h2>Lifecycle Actions</h2>
-            <span class="status-pill amber">@DisplayText(SelectedAppointment?.Status, "No selection")</span>
+            <div>
+                <p class="panel-subtitle">Controlled actions</p>
+                <h2>Lifecycle Actions</h2>
+            </div>
+            <span class="@LifecycleStatusClass">@DisplayText(SelectedAppointment?.Status, "No selection")</span>
         </div>
         @if (SelectedAppointment is null)
         {
-            <p class="tone-muted">Select an appointment to manage confirm, cancel, reschedule, and completion actions.</p>
+            <div class="empty-state">Select an appointment to manage confirm, cancel, reschedule, and completion actions.</div>
         }
         else
         {
             <div class="dispense-summary">
                 <strong>@SelectedAppointment.PatientName -> @SelectedAppointment.DoctorName</strong>
-                <span>@SelectedAppointment.ReasonForVisit</span>
-                <span>@SelectedAppointment.ScheduledAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                <span>@DisplayText(SelectedAppointment.ReasonForVisit, "No reason captured")</span>
+                <span>@LifecycleRecommendation</span>
             </div>
+            @if (LifecycleSignals.Count > 0)
+            {
+                <div class="selected-tests">
+                    @foreach (var signal in LifecycleSignals)
+                    {
+                        <span>@signal</span>
+                    }
+                </div>
+            }
 
             <div class="panel-toolbar action-cluster">
-                <button class="secondary-button" type="button" @onclick="ConfirmAppointmentAsync" disabled="@IsBusy">Confirm</button>
+                <button class="secondary-button" type="button" @onclick="ConfirmAppointmentAsync" disabled="@(!CanConfirmAppointment)">Confirm</button>
+                @if (!string.IsNullOrWhiteSpace(SelectedAppointment.MeetingLink))
+                {
+                    <a class="secondary-button" href="@SelectedAppointment.MeetingLink" target="_blank" rel="noreferrer">Open Session</a>
+                }
+                @if (SelectedAppointment.Status == "Completed")
+                {
+                    <a class="secondary-button" href="@($"/consultation/summary/{SelectedAppointment.Id}")">Open Summary</a>
+                }
             </div>
 
             <div class="entity-form">
                 <label>Cancellation Reason<InputTextArea @bind-Value="CancelForm.CancellationReason" /></label>
                 <label>Cancelled By<InputText @bind-Value="CancelForm.CancelledBy" /></label>
-                <button class="secondary-button" type="button" @onclick="CancelAppointmentAsync" disabled="@IsBusy">Cancel Appointment</button>
+                <button class="secondary-button" type="button" @onclick="CancelAppointmentAsync" disabled="@(!CanCancelAppointment)">Cancel Appointment</button>
             </div>
 
             <div class="entity-form">
                 <label>Reschedule At<input type="datetime-local" value="@RescheduleScheduledAtText" @onchange="OnRescheduleScheduledAtChanged" /></label>
                 <label>Duration<InputNumber @bind-Value="RescheduleForm.DurationMinutes" /></label>
                 <label>Reason<InputTextArea @bind-Value="RescheduleForm.Reason" /></label>
-                <button class="secondary-button" type="button" @onclick="RescheduleAppointmentAsync" disabled="@IsBusy">Reschedule</button>
+                <button class="secondary-button" type="button" @onclick="RescheduleAppointmentAsync" disabled="@(!CanRescheduleAppointment)">Reschedule</button>
             </div>
 
             <div class="entity-form">
                 <label>Diagnosis<InputTextArea @bind-Value="CompleteForm.Diagnosis" /></label>
                 <label>Clinical Notes<InputTextArea @bind-Value="CompleteForm.ClinicalNotes" /></label>
                 <label>Follow Up<input type="date" value="@FollowUpDateText" @onchange="OnFollowUpDateChanged" /></label>
-                <button class="primary-button" type="button" @onclick="CompleteAppointmentAsync" disabled="@IsBusy">Complete Consultation</button>
+                <button class="primary-button" type="button" @onclick="CompleteAppointmentAsync" disabled="@(!CanCompleteAppointment)">Complete Consultation</button>
             </div>
         }
     </article>
 
     <article class="panel">
         <div class="panel-header">
-            <h2>Appointment Detail</h2>
+            <div>
+                <p class="panel-subtitle">Full detail</p>
+                <h2>Appointment Detail</h2>
+            </div>
             <span class="status-pill blue">@DisplayText(SelectedAppointment?.Type, "No detail")</span>
         </div>
         @if (SelectedAppointment is null)
         {
-            <p class="tone-muted">Appointment detail will appear here after selection.</p>
+            <div class="empty-state">Appointment detail will appear here after selection.</div>
         }
         else
         {
@@ -186,6 +343,24 @@
                 <div class="table-row"><span>Cancellation</span><span>@DisplayText(SelectedAppointment.CancellationReason, "Not cancelled")</span></div>
                 <div class="table-row"><span>Created</span><span>@SelectedAppointment.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span></div>
             </div>
+            <div class="module-grid">
+                <a class="module-tile" href="@($"/patients?patientId={SelectedAppointment.PatientId}")">
+                    <strong>Patient Registry</strong>
+                    <span>Open patient workspace for profile and vitals refinement</span>
+                </a>
+                <a class="module-tile" href="@($"/doctors?doctorId={SelectedAppointment.DoctorId}")">
+                    <strong>Doctor Workspace</strong>
+                    <span>Open doctor workspace for schedule and verification updates</span>
+                </a>
+                <a class="module-tile" href="@($"/portal/patient?patientId={SelectedAppointment.PatientId}&appointmentId={SelectedAppointment.Id}")">
+                    <strong>Patient Portal</strong>
+                    <span>Validate this appointment from the patient-facing experience</span>
+                </a>
+                <a class="module-tile" href="@($"/portal/doctor?doctorId={SelectedAppointment.DoctorId}&patientId={SelectedAppointment.PatientId}")">
+                    <strong>Doctor Portal</strong>
+                    <span>Check queue and history around the same appointment context</span>
+                </a>
+            </div>
         }
     </article>
 </section>
@@ -196,8 +371,18 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "patientId")]
+    public Guid? PrefillPatientId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "doctorId")]
+    public Guid? PrefillDoctorId { get; set; }
+
     private IReadOnlyList<AppointmentModel> AppointmentResults { get; set; } = [];
+    private IReadOnlyList<PatientModel> BookingPatientResults { get; set; } = [];
+    private IReadOnlyList<DoctorModel> BookingDoctorResults { get; set; } = [];
     private AppointmentModel? SelectedAppointment { get; set; }
+    private PatientModel? SelectedBookingPatient { get; set; }
+    private DoctorModel? SelectedBookingDoctor { get; set; }
     private BookAppointmentModel BookForm { get; set; } = new();
     private CancelAppointmentModel CancelForm { get; set; } = new();
     private RescheduleAppointmentModel RescheduleForm { get; set; } = new();
@@ -207,17 +392,69 @@
     private string SearchPatientIdText { get; set; } = string.Empty;
     private string SearchDoctorIdText { get; set; } = string.Empty;
     private string SearchDateText { get; set; } = string.Empty;
-    private string BookScheduledAtText { get; set; } = DateTimeOffset.Now.AddDays(1).ToString("yyyy-MM-ddTHH:mm");
-    private string RescheduleScheduledAtText { get; set; } = DateTimeOffset.Now.AddDays(2).ToString("yyyy-MM-ddTHH:mm");
+    private string BookScheduledAtText { get; set; } = string.Empty;
+    private string RescheduleScheduledAtText { get; set; } = string.Empty;
     private string FollowUpDateText { get; set; } = string.Empty;
     private string StatusFilter { get; set; } = string.Empty;
+    private string BookingPatientSearchText { get; set; } = string.Empty;
+    private string BookingDoctorSpecialization { get; set; } = string.Empty;
+    private string BookingDoctorCity { get; set; } = string.Empty;
+    private decimal? BookingDoctorMaxFee { get; set; }
     private DateOnly? SearchDate { get; set; }
     private bool IsBusy { get; set; }
     private string? StatusMessage { get; set; }
     private string StatusClass { get; set; } = "tone-muted";
+    private string? AppliedBookingSignature { get; set; }
+    private bool CanBookAppointment => !IsBusy && Guid.TryParse(BookPatientIdText, out _) && Guid.TryParse(BookDoctorIdText, out _);
+    private bool HasBookingContext => !string.IsNullOrWhiteSpace(BookPatientIdText) || !string.IsNullOrWhiteSpace(BookDoctorIdText);
+    private bool CanConfirmAppointment => !IsBusy && SelectedAppointment?.Status == "Pending";
+    private bool CanCancelAppointment => !IsBusy && SelectedAppointment is not null && (SelectedAppointment.Status == "Pending" || SelectedAppointment.Status == "Confirmed");
+    private bool CanRescheduleAppointment => !IsBusy && SelectedAppointment is not null && (SelectedAppointment.Status == "Pending" || SelectedAppointment.Status == "Confirmed");
+    private bool CanCompleteAppointment => !IsBusy && SelectedAppointment is not null && (SelectedAppointment.Status == "Confirmed" || SelectedAppointment.Status == "InProgress");
+    private string BookingReadinessText => SelectedBookingPatient is not null && SelectedBookingDoctor is not null
+        ? "Ready"
+        : CanBookAppointment
+            ? "Manual ids"
+            : "Needs context";
+    private string BookingReadinessClass => SelectedBookingPatient is not null && SelectedBookingDoctor is not null
+        ? "status-pill green"
+        : CanBookAppointment
+            ? "status-pill blue"
+            : "status-pill amber";
+    private string BookingContextHeadline => SelectedBookingPatient is not null || SelectedBookingDoctor is not null
+        ? "Context linked from workspace"
+        : "Start by selecting patient and doctor";
+    private string BookingContextSummary => $"{DisplayText(SelectedBookingPatient is null ? null : $"{SelectedBookingPatient.FirstName} {SelectedBookingPatient.LastName}", "Patient not selected")} / {DisplayText(SelectedBookingDoctor is null ? null : $"{SelectedBookingDoctor.FullName}", "Doctor not selected")}";
+    private string LifecycleStatusClass => SelectedAppointment is null ? "status-pill blue" : StatusPill(SelectedAppointment.Status);
+    private string LifecycleRecommendation => SelectedAppointment is null
+        ? "Select an appointment to begin."
+        : SelectedAppointment.Status switch
+        {
+            "Pending" => "Recommended next action: confirm before operational handoff.",
+            "Confirmed" => "Recommended next action: reschedule if timing changes, otherwise complete after consultation.",
+            "InProgress" => "Recommended next action: complete consultation and capture follow-up details.",
+            "Completed" => "Recommended next action: review summary or downstream pharmacy and lab actions.",
+            "Cancelled" => "Recommended next action: book a replacement appointment if care is still required.",
+            _ => "Review the latest lifecycle event before taking the next action."
+        };
+    private IReadOnlyList<string> BookingSignals => BuildBookingSignals();
+    private IReadOnlyList<string> LifecycleSignals => BuildLifecycleSignals();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResetBookingForm(false);
+        await SearchAppointmentsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ApplyBookingContextFromQueryAsync();
+    }
 
     private async Task BookAppointmentAsync()
     {
+        await ResolveBookingContextAsync();
+
         if (!Guid.TryParse(BookPatientIdText, out var patientId) || !Guid.TryParse(BookDoctorIdText, out var doctorId))
         {
             SetStatus("Valid patient id and doctor id are required.", "tone-amber");
@@ -237,6 +474,7 @@
             AppointmentResults = [result.Data, .. AppointmentResults.Where(x => x.Id != result.Data.Id)];
             ApplySelectedAppointment(result.Data);
             ResetBookingForm();
+            ApplyBookingContextToSearchFilters();
             SetStatus("Appointment booked and opened.", "tone-green");
             return;
         }
@@ -275,7 +513,7 @@
         if (result?.Success == true && result.Data is not null)
         {
             AppointmentResults = result.Data.OrderByDescending(x => x.ScheduledAt).ToArray();
-            SetStatus("Appointment search loaded.", "tone-green");
+            SetStatus(AppointmentResults.Count == 0 ? "Appointment search loaded. No matching appointments were found." : "Appointment search loaded.", AppointmentResults.Count == 0 ? "tone-blue" : "tone-green");
             return;
         }
 
@@ -375,6 +613,165 @@
         SetStatus(result?.Error?.Message ?? "Appointment action failed.", "tone-amber");
     }
 
+    private async Task LoadBookingPatientsAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<PatientModel>>($"api/v1/patients?search={Uri.EscapeDataString(BookingPatientSearchText)}");
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            BookingPatientResults = result.Data.Take(8).ToArray();
+            SetStatus(BookingPatientResults.Count == 0 ? "Patient lookup returned no matches." : "Patient booking context refreshed.", BookingPatientResults.Count == 0 ? "tone-blue" : "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Patient lookup unavailable.", "tone-amber");
+    }
+
+    private async Task LoadBookingDoctorsAsync()
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(BookingDoctorSpecialization))
+        {
+            query.Add($"specialization={Uri.EscapeDataString(BookingDoctorSpecialization)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(BookingDoctorCity))
+        {
+            query.Add($"city={Uri.EscapeDataString(BookingDoctorCity)}");
+        }
+
+        if (BookingDoctorMaxFee.HasValue)
+        {
+            query.Add($"maxFee={BookingDoctorMaxFee.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+
+        var url = query.Count == 0 ? "api/v1/doctors" : $"api/v1/doctors?{string.Join("&", query)}";
+        IsBusy = true;
+        var result = await ApiClient.GetAsync<IReadOnlyList<DoctorModel>>(url);
+        IsBusy = false;
+
+        if (result?.Success == true && result.Data is not null)
+        {
+            BookingDoctorResults = result.Data.Take(8).ToArray();
+            SetStatus(BookingDoctorResults.Count == 0 ? "Doctor lookup returned no matches." : "Doctor booking context refreshed.", BookingDoctorResults.Count == 0 ? "tone-blue" : "tone-green");
+            return;
+        }
+
+        SetStatus(result?.Error?.Message ?? "Doctor lookup unavailable.", "tone-amber");
+    }
+
+    private async Task ApplyBookingContextFromQueryAsync()
+    {
+        var signature = $"{PrefillPatientId?.ToString() ?? "-"}|{PrefillDoctorId?.ToString() ?? "-"}";
+        if (signature == AppliedBookingSignature)
+        {
+            return;
+        }
+
+        AppliedBookingSignature = signature;
+        var contextApplied = false;
+
+        if (PrefillPatientId.HasValue)
+        {
+            await LoadBookingPatientByIdAsync(PrefillPatientId.Value, false);
+            contextApplied = true;
+        }
+
+        if (PrefillDoctorId.HasValue)
+        {
+            await LoadBookingDoctorByIdAsync(PrefillDoctorId.Value, false);
+            contextApplied = true;
+        }
+
+        if (contextApplied)
+        {
+            ApplyBookingContextToSearchFilters();
+            await SearchAppointmentsAsync();
+            SetStatus("Booking context prefilled from the linked workspace.", "tone-blue");
+        }
+    }
+
+    private async Task ResolveBookingContextAsync()
+    {
+        if (Guid.TryParse(BookPatientIdText, out var patientId) && SelectedBookingPatient?.Id != patientId)
+        {
+            await LoadBookingPatientByIdAsync(patientId, false);
+        }
+
+        if (Guid.TryParse(BookDoctorIdText, out var doctorId) && SelectedBookingDoctor?.Id != doctorId)
+        {
+            await LoadBookingDoctorByIdAsync(doctorId, false);
+        }
+    }
+
+    private async Task LoadBookingPatientByIdAsync(Guid patientId, bool announce)
+    {
+        var result = await ApiClient.GetAsync<PatientModel>($"api/v1/patients/{patientId}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            ApplyBookingPatient(result.Data);
+            if (announce)
+            {
+                SetStatus("Patient context loaded for booking.", "tone-green");
+            }
+        }
+    }
+
+    private async Task LoadBookingDoctorByIdAsync(Guid doctorId, bool announce)
+    {
+        var result = await ApiClient.GetAsync<DoctorModel>($"api/v1/doctors/{doctorId}");
+        if (result?.Success == true && result.Data is not null)
+        {
+            ApplyBookingDoctor(result.Data);
+            if (announce)
+            {
+                SetStatus("Doctor context loaded for booking.", "tone-green");
+            }
+        }
+    }
+
+    private void ApplyBookingPatient(PatientModel patient)
+    {
+        SelectedBookingPatient = patient;
+        BookPatientIdText = patient.Id.ToString();
+        SearchPatientIdText = patient.Id.ToString();
+        BookingPatientSearchText = $"{patient.FirstName} {patient.LastName}";
+        BookingPatientResults = [patient, .. BookingPatientResults.Where(x => x.Id != patient.Id)];
+    }
+
+    private void ApplyBookingDoctor(DoctorModel doctor)
+    {
+        SelectedBookingDoctor = doctor;
+        BookDoctorIdText = doctor.Id.ToString();
+        SearchDoctorIdText = doctor.Id.ToString();
+        BookingDoctorSpecialization = doctor.Specialization;
+        BookingDoctorCity = doctor.City;
+        BookingDoctorResults = [doctor, .. BookingDoctorResults.Where(x => x.Id != doctor.Id)];
+    }
+
+    private void ApplyBookingContextToSearchFilters()
+    {
+        SearchPatientIdText = BookPatientIdText;
+        SearchDoctorIdText = BookDoctorIdText;
+    }
+
+    private void ClearBookingContext()
+    {
+        SelectedBookingPatient = null;
+        SelectedBookingDoctor = null;
+        BookingPatientResults = [];
+        BookingDoctorResults = [];
+        BookingPatientSearchText = string.Empty;
+        BookingDoctorSpecialization = string.Empty;
+        BookingDoctorCity = string.Empty;
+        BookingDoctorMaxFee = null;
+        BookPatientIdText = string.Empty;
+        BookDoctorIdText = string.Empty;
+        SetStatus("Booking context cleared.", "tone-blue");
+    }
+
     private void ApplySelectedAppointment(AppointmentModel appointment)
     {
         CancelForm = new CancelAppointmentModel
@@ -394,16 +791,24 @@
             ClinicalNotes = appointment.ClinicalNotes,
             FollowUpDate = appointment.FollowUpDate
         };
-        RescheduleScheduledAtText = RescheduleForm.ScheduledAt.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
+        RescheduleScheduledAtText = ToLocalDateTimeText(RescheduleForm.ScheduledAt);
         FollowUpDateText = appointment.FollowUpDate?.ToString("yyyy-MM-dd") ?? string.Empty;
     }
 
     private void ResetBookingForm()
     {
+        ResetBookingForm(true);
+    }
+
+    private void ResetBookingForm(bool preserveContext)
+    {
+        var patientId = preserveContext ? (SelectedBookingPatient?.Id.ToString() ?? BookPatientIdText) : string.Empty;
+        var doctorId = preserveContext ? (SelectedBookingDoctor?.Id.ToString() ?? BookDoctorIdText) : string.Empty;
+
         BookForm = new BookAppointmentModel();
-        BookPatientIdText = string.Empty;
-        BookDoctorIdText = string.Empty;
-        BookScheduledAtText = BookForm.ScheduledAt.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
+        BookPatientIdText = patientId;
+        BookDoctorIdText = doctorId;
+        BookScheduledAtText = ToLocalDateTimeText(BookForm.ScheduledAt);
     }
 
     private void OnBookScheduledAtChanged(ChangeEventArgs args)
@@ -451,6 +856,55 @@
         StatusClass = statusClass;
     }
 
+    private IReadOnlyList<string> BuildBookingSignals()
+    {
+        var signals = new List<string>();
+
+        if (SelectedBookingPatient is not null)
+        {
+            signals.Add($"{SelectedBookingPatient.FirstName} {SelectedBookingPatient.LastName}");
+            signals.Add(DisplayText(SelectedBookingPatient.BloodGroup, "Blood group pending"));
+        }
+
+        if (SelectedBookingDoctor is not null)
+        {
+            signals.Add(SelectedBookingDoctor.Specialization);
+            signals.Add($"{SelectedBookingDoctor.ConsultationFee.ToString("0")} fee");
+        }
+
+        signals.Add(BookForm.Type);
+        signals.Add($"{BookForm.DurationMinutes} min");
+
+        return signals;
+    }
+
+    private IReadOnlyList<string> BuildLifecycleSignals()
+    {
+        if (SelectedAppointment is null)
+        {
+            return [];
+        }
+
+        var signals = new List<string>
+        {
+            SelectedAppointment.Priority,
+            SelectedAppointment.Type,
+            SelectedAppointment.PaymentStatus
+        };
+
+        if (SelectedAppointment.QueueNumber.HasValue)
+        {
+            signals.Add($"Queue {SelectedAppointment.QueueNumber.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(SelectedAppointment.MeetingLink))
+        {
+            signals.Add("Meeting ready");
+        }
+
+        return signals;
+    }
+
     private static string DisplayText(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -463,6 +917,7 @@
             "Completed" => "status-pill green",
             "Confirmed" or "InProgress" => "status-pill blue",
             "Cancelled" or "NoShow" => "status-pill amber",
+            "Pending" => "status-pill amber",
             _ => "status-pill blue"
         };
     }
@@ -475,5 +930,10 @@
             "Cancelled" or "NoShow" => "tone-amber",
             _ => "tone-blue"
         };
+    }
+
+    private static string ToLocalDateTimeText(DateTimeOffset value)
+    {
+        return value.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
     }
 }

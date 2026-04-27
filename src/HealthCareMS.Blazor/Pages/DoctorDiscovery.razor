@@ -32,15 +32,22 @@
 
 <section class="panel">
     <div class="panel-header"><h2>Recommendations</h2><span class="status-pill blue">@Recommendations.Count</span></div>
-    @foreach (var item in Recommendations)
+    @if (Recommendations.Count == 0)
     {
-        <div class="queue-row">
-            <div>
-                <strong>@item.Doctor.FullName (@item.Doctor.Specialization)</strong>
-                <span>@string.Join(" | ", item.MatchReasons)</span>
+        <div class="empty-state">No recommendation set loaded yet. Provide patient or specialty context to generate best-match doctors.</div>
+    }
+    else
+    {
+        @foreach (var item in Recommendations)
+        {
+            <div class="queue-row">
+                <div>
+                    <strong>@item.Doctor.FullName (@item.Doctor.Specialization)</strong>
+                    <span>@string.Join(" | ", item.MatchReasons)</span>
+                </div>
+                <span class="status-pill @(item.IsBestMatch ? "green" : "blue")">@item.MatchScore.ToString("0.0")</span>
             </div>
-            <span class="status-pill @(item.IsBestMatch ? "green" : "blue")">@item.MatchScore.ToString("0.0")</span>
-        </div>
+        }
     }
 </section>
 
@@ -50,6 +57,24 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "patientId")]
+    public Guid? PrefillPatientId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "specialization")]
+    public string? PrefillSpecialization { get; set; }
+
+    [SupplyParameterFromQuery(Name = "city")]
+    public string? PrefillCity { get; set; }
+
+    [SupplyParameterFromQuery(Name = "maxFee")]
+    public decimal? PrefillMaxFee { get; set; }
+
+    [SupplyParameterFromQuery(Name = "date")]
+    public string? PrefillDate { get; set; }
+
+    [SupplyParameterFromQuery(Name = "appointmentType")]
+    public string? PrefillAppointmentType { get; set; }
+
     private string PatientIdText { get; set; } = string.Empty;
     private string? Specialization { get; set; }
     private string? City { get; set; }
@@ -60,6 +85,53 @@
     private string? StatusMessage { get; set; }
     private string StatusClass { get; set; } = "tone-muted";
     private string DateText => TargetDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+    private string? AppliedDiscoverySignature { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = $"{PrefillPatientId?.ToString() ?? "-"}|{PrefillSpecialization ?? "-"}|{PrefillCity ?? "-"}|{PrefillMaxFee?.ToString() ?? "-"}|{PrefillDate ?? "-"}|{PrefillAppointmentType ?? "-"}";
+        if (signature == AppliedDiscoverySignature)
+        {
+            return;
+        }
+
+        AppliedDiscoverySignature = signature;
+
+        if (PrefillPatientId.HasValue)
+        {
+            PatientIdText = PrefillPatientId.Value.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(PrefillSpecialization))
+        {
+            Specialization = PrefillSpecialization;
+        }
+
+        if (!string.IsNullOrWhiteSpace(PrefillCity))
+        {
+            City = PrefillCity;
+        }
+
+        if (PrefillMaxFee.HasValue)
+        {
+            MaxFee = PrefillMaxFee.Value;
+        }
+
+        if (DateOnly.TryParse(PrefillDate, out var parsedDate))
+        {
+            TargetDate = parsedDate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(PrefillAppointmentType))
+        {
+            AppointmentType = PrefillAppointmentType;
+        }
+
+        if (PrefillPatientId.HasValue || !string.IsNullOrWhiteSpace(PrefillSpecialization) || !string.IsNullOrWhiteSpace(PrefillCity))
+        {
+            await LoadAsync();
+        }
+    }
 
     private async Task LoadAsync()
     {

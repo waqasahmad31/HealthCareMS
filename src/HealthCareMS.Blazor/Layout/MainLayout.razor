@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @implements IAsyncDisposable
 @inject IJSRuntime JS
+@inject AuthSessionService AuthSession
+@inject NavigationManager Navigation
 
 <div class="page">
     <div class="sidebar">
@@ -17,7 +19,7 @@
                 <a class="icon-button" title="Notifications" aria-label="Notifications" href="notifications">N</a>
                 <span class="role-badge">SuperAdmin</span>
                 <button class="text-button" type="button" @onclick="ToggleThemeAsync">@ThemeLabel</button>
-                <button class="text-button">Logout</button>
+                <button class="text-button" type="button" @onclick="LogoutAsync">Logout</button>
             </div>
         </div>
 
@@ -58,6 +60,12 @@
         {
             ThemeLabel = "Theme";
         }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await AuthSession.ClearSessionAsync();
+        Navigation.NavigateTo("/login", forceLoad: true);
     }
 
     public async ValueTask DisposeAsync()

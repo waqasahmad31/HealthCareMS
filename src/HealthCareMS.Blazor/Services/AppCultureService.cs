@@ -15,8 +15,7 @@ public sealed class AppCultureService(IJSRuntime jsRuntime)
     {
         try
         {
-            var stored = await jsRuntime.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-            CurrentCulture = Normalize(stored);
+            CurrentCulture = Normalize(await jsRuntime.InvokeAsync<string>("healthCareCulture.init"));
         }
         catch (JSException)
         {
@@ -28,9 +27,18 @@ public sealed class AppCultureService(IJSRuntime jsRuntime)
 
     public async Task SetCultureAsync(string culture)
     {
-        CurrentCulture = Normalize(culture);
+        var normalized = Normalize(culture);
+        try
+        {
+            CurrentCulture = Normalize(await jsRuntime.InvokeAsync<string>("healthCareCulture.apply", normalized));
+        }
+        catch (JSException)
+        {
+            CurrentCulture = normalized;
+            await jsRuntime.InvokeVoidAsync("localStorage.setItem", StorageKey, CurrentCulture);
+        }
+
         ApplyCulture(CurrentCulture);
-        await jsRuntime.InvokeVoidAsync("localStorage.setItem", StorageKey, CurrentCulture);
         Changed?.Invoke();
     }
 

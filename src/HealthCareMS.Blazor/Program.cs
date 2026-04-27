@@ -25,7 +25,7 @@ builder.Services.AddScoped<AuthSessionService>();
 builder.Services.AddScoped<HealthCareApiClient>();
 builder.Services.AddScoped<AppCultureService>();
 
-CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
-CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("en");
+CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo("en");
 
 await builder.Build().RunAsync();

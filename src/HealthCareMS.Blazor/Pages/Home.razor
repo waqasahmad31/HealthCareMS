@@ -8,8 +8,8 @@
         <h1>Operations Dashboard</h1>
     </div>
     <div class="header-actions action-cluster">
-        <button class="secondary-button">Export</button>
-        <button class="primary-button">Register Tenant</button>
+        <a class="secondary-button" href="/analytics">Open Analytics</a>
+        <a class="primary-button" href="/tenants">Manage Tenants</a>
     </div>
 </section>
 
@@ -59,6 +59,22 @@
             }
         </div>
     </article>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Care Journeys</h2>
+        <span class="status-pill amber">Guided flow</span>
+    </div>
+    <div class="module-grid">
+        @foreach (var item in Journeys)
+        {
+            <a class="module-tile" href="@item.Route">
+                <strong>@item.Name</strong>
+                <span>@item.Caption</span>
+            </a>
+        }
+    </div>
 </section>
 
 <section class="panel">
@@ -145,6 +161,14 @@
         new("pharmacy.orders.process", "Pharmacy"),
         new("lab.results.release", "Laboratory"),
         new("doctor.verify", "Doctor Admin")
+    ];
+
+    private readonly LaunchpadItem[] Journeys =
+    [
+        new("Patient Intake To Booking", "/patients", "Register or search a patient, then carry context into appointment booking"),
+        new("Doctor Readiness", "/doctors", "Credential, verify, and prepare weekly schedule coverage"),
+        new("Operational Scheduling", "/appointments", "Guide patient + doctor context into lifecycle-controlled appointments"),
+        new("Go-Live Support", "/help", "Training assets, rollout guidance, and support handover")
     ];
 
     private readonly LaunchpadItem[] Launchpad =

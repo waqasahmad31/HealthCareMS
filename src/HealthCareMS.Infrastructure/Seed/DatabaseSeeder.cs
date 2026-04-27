@@ -237,17 +237,45 @@ public sealed class DatabaseSeeder(
                 "JSON configuration for role and permission-based navigation menu (EN/UR).")
         };
 
-        var existingKeys = await dbContext.SystemSettings
-            .Select(x => x.SettingKey)
+        var existingSettings = await dbContext.SystemSettings
             .ToListAsync(cancellationToken);
-        var existing = existingKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingLookup = existingSettings.ToDictionary(x => x.SettingKey, StringComparer.OrdinalIgnoreCase);
+        var hasChanges = false;
 
-        foreach (var setting in defaults.Where(x => !existing.Contains(x.SettingKey)))
+        foreach (var setting in defaults)
         {
-            dbContext.SystemSettings.Add(setting);
+            if (!existingLookup.TryGetValue(setting.SettingKey, out var existing))
+            {
+                dbContext.SystemSettings.Add(setting);
+                hasChanges = true;
+                continue;
+            }
+
+            if (!string.Equals(setting.SettingKey, NavigationSettingKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var defaultPayload = ReadNavigationSeedPayload(NavigationDefaults.ConfigurationJson) ?? new NavigationSeedPayload([]);
+            var configuredPayload = ReadNavigationSeedPayload(existing.Value);
+            var mergedPayload = MergeNavigationSeedPayloads(configuredPayload, defaultPayload);
+            var mergedJson = SerializeNavigationSeedPayload(mergedPayload);
+
+            if (string.Equals(existing.Value, mergedJson, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            existing.Value = mergedJson;
+            existing.ValueType = setting.ValueType;
+            existing.Description = setting.Description;
+            hasChanges = true;
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        if (hasChanges)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private async Task SeedNavigationEntitiesAsync(CancellationToken cancellationToken)
@@ -639,6 +667,11 @@ public sealed class DatabaseSeeder(
             .ToArray();
 
         return JsonSerializer.Serialize(normalized, JsonOptions);
+    }
+
+    private static string SerializeNavigationSeedPayload(NavigationSeedPayload payload)
+    {
+        return JsonSerializer.Serialize(payload, JsonOptions);
     }
 
     private static string? NormalizeNavigationKey(string? key)

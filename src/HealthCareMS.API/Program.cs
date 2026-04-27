@@ -6,6 +6,7 @@ using Hangfire;
 using Hangfire.MemoryStorage;
 using HealthCareMS.API.Configuration;
 using HealthCareMS.API.Consultations;
+using HealthCareMS.API.Health;
 using HealthCareMS.API.Hubs;
 using HealthCareMS.API.Notifications;
 using HealthCareMS.API.Security;
@@ -23,8 +24,10 @@ using HealthCareMS.Shared.Api;
 using HealthCareMS.Shared.Common;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -62,7 +65,14 @@ builder.Services.AddOutputCache(options =>
     options.AddPolicy("LookupGetMedium", policy => policy.Expire(TimeSpan.FromMinutes(2)));
 });
 builder.Services.AddDistributedMemoryCache();
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddCheck(
+        "self",
+        () => HealthCheckResult.Healthy("API process is running."),
+        tags: ["live", "ready"])
+    .AddCheck<DatabaseReadinessHealthCheck>(
+        "database",
+        tags: ["ready"]);
 builder.Services.AddSignalR();
 builder.Services.AddHangfire(configuration => configuration.UseMemoryStorage());
 builder.Services.AddHangfireServer();
@@ -267,7 +277,30 @@ app.UseMiddleware<ResponseTimingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health");
+app.MapHealthChecks(
+        "/health",
+        new HealthCheckOptions
+        {
+            Predicate = _ => true,
+            ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+        })
+    .AllowAnonymous();
+app.MapHealthChecks(
+        "/health/live",
+        new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("live"),
+            ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+        })
+    .AllowAnonymous();
+app.MapHealthChecks(
+        "/health/ready",
+        new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("ready"),
+            ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+        })
+    .AllowAnonymous();
 app.MapControllers();
 app.MapHub<QueueHub>("/hubs/queue");
 app.MapHub<NotificationHub>("/hubs/notifications");

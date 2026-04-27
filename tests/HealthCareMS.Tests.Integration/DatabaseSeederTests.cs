@@ -2,11 +2,13 @@ using HealthCareMS.Application.Abstractions.Tenancy;
 using HealthCareMS.Domain.Identity;
 using HealthCareMS.Infrastructure.Admin;
 using HealthCareMS.Infrastructure.Authentication;
+using HealthCareMS.Infrastructure.Configuration;
 using HealthCareMS.Infrastructure.Persistence;
 using HealthCareMS.Infrastructure.Seed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 
 namespace HealthCareMS.Tests.Integration;
 
@@ -124,6 +126,64 @@ public sealed class DatabaseSeederTests
         Assert.Contains(await dbContext.NavigationGroups.Where(x => x.TenantId == null).ToListAsync(), x => x.Key == "general");
         Assert.Contains(await dbContext.NavigationItems.Where(x => x.NavigationGroup.TenantId == null).ToListAsync(), x => x.Key == "payments");
         Assert.Contains(await dbContext.NavigationGroups.Where(x => x.TenantId == tenantId).ToListAsync(), x => x.Key == "tenant-dashboard");
+    }
+
+    [Fact]
+    public async Task SeedAsync_ShouldMergeNavigationSystemSettingWithEnterpriseDefaults()
+    {
+        await using var dbContext = CreateDbContext();
+
+        dbContext.SystemSettings.Add(new SystemSetting
+        {
+            SettingKey = NavigationDefaults.SettingKey,
+            GroupName = "Platform",
+            DisplayName = "Navigation menu configuration",
+            ValueType = "Json",
+            Value =
+                """
+                {
+                  "groups": [
+                    {
+                      "key": "custom",
+                      "sortOrder": 5,
+                      "labels": {
+                        "en": "Custom",
+                        "ur": "Custom"
+                      },
+                      "items": [
+                        {
+                          "key": "custom-dashboard",
+                          "label": {
+                            "en": "Custom Dashboard",
+                            "ur": "Custom Dashboard"
+                          },
+                          "icon": "dashboard",
+                          "route": "custom/dashboard",
+                          "sortOrder": 10
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+        });
+        await dbContext.SaveChangesAsync();
+
+        var seeder = CreateSeeder(dbContext);
+        await seeder.SeedAsync(seedDemoData: false, CancellationToken.None);
+
+        var setting = await dbContext.SystemSettings.SingleAsync(x => x.SettingKey == NavigationDefaults.SettingKey);
+        using var document = JsonDocument.Parse(setting.Value);
+        var groups = document.RootElement.GetProperty("groups").EnumerateArray().ToList();
+
+        Assert.Contains(groups, x => string.Equals(x.GetProperty("key").GetString(), "custom", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(groups, x => string.Equals(x.GetProperty("key").GetString(), "admin", StringComparison.OrdinalIgnoreCase));
+
+        var operations = groups.Single(x => string.Equals(x.GetProperty("key").GetString(), "operations", StringComparison.OrdinalIgnoreCase));
+        var operationsItems = operations.GetProperty("items").EnumerateArray().ToList();
+
+        Assert.Contains(operationsItems, x => string.Equals(x.GetProperty("key").GetString(), "payments", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(operationsItems, x => string.Equals(x.GetProperty("key").GetString(), "lab-workflow", StringComparison.OrdinalIgnoreCase));
     }
 
     private static DatabaseSeeder CreateSeeder(HealthCareDbContext dbContext)

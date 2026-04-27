@@ -11,6 +11,12 @@
 </Router>
 
 @code {
+    protected override async Task OnInitializedAsync()
+    {
+        await CultureService.InitializeAsync();
+        CultureService.Changed += HandleCultureChanged;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
@@ -22,18 +28,19 @@
         Navigation.LocationChanged += OnLocationChanged;
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        await CultureService.InitializeAsync();
-    }
-
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
     {
         _ = AuthSession.EnsureRouteAccessAsync();
     }
 
+    private async void HandleCultureChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
+        CultureService.Changed -= HandleCultureChanged;
         Navigation.LocationChanged -= OnLocationChanged;
     }
 }

@@ -70,21 +70,28 @@
                 <h2>Today's Queue</h2>
                 <span class="status-pill blue">@Dashboard.InProgressCount active</span>
             </div>
-            <div class="queue-list live-queue-list">
-                @foreach (var appointment in Dashboard.TodayAppointments)
-                {
-                    <div class="queue-row queue-entry-row">
-                        <div>
-                            <strong>@appointment.ScheduledAt.LocalDateTime.ToString("HH:mm") @appointment.PatientName</strong>
-                            <span>@appointment.ReasonForVisit</span>
+            @if (Dashboard.TodayAppointments.Count == 0)
+            {
+                <div class="empty-state">No appointments are queued for the selected doctor and date yet.</div>
+            }
+            else
+            {
+                <div class="queue-list live-queue-list">
+                    @foreach (var appointment in Dashboard.TodayAppointments)
+                    {
+                        <div class="queue-row queue-entry-row">
+                            <div>
+                                <strong>@appointment.ScheduledAt.LocalDateTime.ToString("HH:mm") @appointment.PatientName</strong>
+                                <span>@appointment.ReasonForVisit</span>
+                            </div>
+                            <div class="queue-entry-meta">
+                                <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                                <span>Token @(appointment.QueueNumber?.ToString() ?? "-")</span>
+                            </div>
                         </div>
-                        <div class="queue-entry-meta">
-                            <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
-                            <span>Token @(appointment.QueueNumber?.ToString() ?? "-")</span>
-                        </div>
-                    </div>
-                }
-            </div>
+                    }
+                </div>
+            }
         </article>
 
         <article class="panel">
@@ -92,21 +99,28 @@
                 <h2>Upcoming</h2>
                 <span class="status-pill green">@Dashboard.UpcomingAppointmentCount</span>
             </div>
-            <div class="table-shell">
-                <div class="table-row table-head portal-row">
-                    <span>Schedule</span>
-                    <span>Patient</span>
-                    <span>Status</span>
-                </div>
-                @foreach (var appointment in Dashboard.UpcomingAppointments)
-                {
-                    <div class="table-row portal-row">
-                        <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
-                        <span>@appointment.PatientName</span>
-                        <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+            @if (Dashboard.UpcomingAppointments.Count == 0)
+            {
+                <div class="empty-state">No upcoming appointments are scheduled after the current queue window.</div>
+            }
+            else
+            {
+                <div class="table-shell">
+                    <div class="table-row table-head portal-row">
+                        <span>Schedule</span>
+                        <span>Patient</span>
+                        <span>Status</span>
                     </div>
-                }
-            </div>
+                    @foreach (var appointment in Dashboard.UpcomingAppointments)
+                    {
+                        <div class="table-row portal-row">
+                            <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                            <span>@appointment.PatientName</span>
+                            <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                        </div>
+                    }
+                </div>
+            }
         </article>
     </section>
 
@@ -115,23 +129,30 @@
             <h2>My Schedule</h2>
             <span class="status-pill blue">@Dashboard.MySchedule.Count</span>
         </div>
-        <div class="table-shell">
-            <div class="table-row table-head schedule-row">
-                <span>Day</span>
-                <span>Window</span>
-                <span>Slot</span>
-                <span>Mode</span>
-            </div>
-            @foreach (var slot in Dashboard.MySchedule)
-            {
-                <div class="table-row schedule-row">
-                    <span>@slot.DayOfWeek</span>
-                    <span>@slot.StartTime.ToString("HH:mm") - @slot.EndTime.ToString("HH:mm")</span>
-                    <span>@slot.SlotDurationMinutes min</span>
-                    <span>@Availability(slot)</span>
+        @if (Dashboard.MySchedule.Count == 0)
+        {
+            <div class="empty-state">No recurring schedule has been configured for this doctor yet.</div>
+        }
+        else
+        {
+            <div class="table-shell">
+                <div class="table-row table-head schedule-row">
+                    <span>Day</span>
+                    <span>Window</span>
+                    <span>Slot</span>
+                    <span>Mode</span>
                 </div>
-            }
-        </div>
+                @foreach (var slot in Dashboard.MySchedule)
+                {
+                    <div class="table-row schedule-row">
+                        <span>@slot.DayOfWeek</span>
+                        <span>@slot.StartTime.ToString("HH:mm") - @slot.EndTime.ToString("HH:mm")</span>
+                        <span>@slot.SlotDurationMinutes min</span>
+                        <span>@Availability(slot)</span>
+                    </div>
+                }
+            </div>
+        }
     </section>
 }
 
@@ -165,6 +186,15 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "doctorId")]
+    public Guid? PrefillDoctorId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "patientId")]
+    public Guid? PrefillPatientId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "date")]
+    public string? PrefillDate { get; set; }
+
     private DoctorPortalDashboardModel? Dashboard { get; set; }
 
     private PatientHistoryModel? PatientHistory { get; set; }
@@ -180,6 +210,43 @@
     private string? StatusMessage { get; set; }
 
     private string StatusClass { get; set; } = "tone-muted";
+    private string? AppliedPortalSignature { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = $"{PrefillDoctorId?.ToString() ?? "-"}|{PrefillPatientId?.ToString() ?? "-"}|{PrefillDate ?? "-"}";
+        if (signature == AppliedPortalSignature)
+        {
+            return;
+        }
+
+        AppliedPortalSignature = signature;
+
+        if (PrefillDoctorId.HasValue)
+        {
+            DoctorIdText = PrefillDoctorId.Value.ToString();
+        }
+
+        if (PrefillPatientId.HasValue)
+        {
+            PatientIdText = PrefillPatientId.Value.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(PrefillDate))
+        {
+            DashboardDateText = PrefillDate;
+        }
+
+        if (PrefillDoctorId.HasValue)
+        {
+            await LoadDashboardAsync();
+
+            if (PrefillPatientId.HasValue)
+            {
+                await LoadHistoryAsync();
+            }
+        }
+    }
 
     private async Task LoadDashboardAsync()
     {

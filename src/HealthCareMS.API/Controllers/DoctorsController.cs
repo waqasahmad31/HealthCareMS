@@ -129,9 +129,10 @@ public sealed class DoctorsController(
         Guid id,
         [FromQuery] DateOnly date,
         [FromQuery] string appointmentType,
+        [FromQuery] int? utcOffsetMinutes,
         CancellationToken cancellationToken)
     {
-        var result = await doctorService.GetAvailableSlotsAsync(id, date, appointmentType, cancellationToken);
+        var result = await doctorService.GetAvailableSlotsAsync(id, date, appointmentType, cancellationToken, utcOffsetMinutes);
         return FromResult(result);
     }
 }

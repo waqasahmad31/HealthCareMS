@@ -23,7 +23,7 @@
         <article class="metric-card">
             <span class="metric-label">Selected Patient</span>
             <strong>@SelectedPatient.FirstName @SelectedPatient.LastName</strong>
-            <span class="tone-blue">@SelectedPatient.Gender / @SelectedPatient.BloodGroup</span>
+            <span class="tone-blue">@PatientDemographicSummary</span>
         </article>
         <article class="metric-card">
             <span class="metric-label">Vitals Entries</span>
@@ -41,20 +41,82 @@
             <span class="tone-muted">@DisplayText(SelectedPatient.InsurancePolicyNo, "No policy captured")</span>
         </article>
     </section>
+
+    <section class="portal-grid">
+        <article class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-subtitle">Live patient context</p>
+                    <h2>Care Coordination</h2>
+                </div>
+                <span class="status-pill green">@SelectedPatientKey</span>
+            </div>
+            <div class="dispense-summary">
+                <strong>@SelectedPatient.FirstName @SelectedPatient.LastName</strong>
+                <span>@DisplayText(SelectedPatient.AddressCity, "City pending") / @DisplayText(SelectedPatient.Phone, SelectedPatient.Email)</span>
+                <span>Created @SelectedPatient.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+            </div>
+            @if (SelectedPatientSignals.Count > 0)
+            {
+                <div class="selected-tests">
+                    @foreach (var signal in SelectedPatientSignals)
+                    {
+                        <span>@signal</span>
+                    }
+                </div>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-subtitle">Premium shortcuts</p>
+                    <h2>Next Actions</h2>
+                </div>
+                <span class="status-pill blue">Cross-module</span>
+            </div>
+            <div class="module-grid">
+                <a class="module-tile" href="@($"/appointments?patientId={SelectedPatient.Id}")">
+                    <strong>Book Appointment</strong>
+                    <span>Carry patient context into scheduling</span>
+                </a>
+                <a class="module-tile" href="@($"/timeline?patientId={SelectedPatient.Id}")">
+                    <strong>Open Timeline</strong>
+                    <span>Review appointments, vitals, labs, and pharmacy activity</span>
+                </a>
+                <a class="module-tile" href="@($"/portal/patient?patientId={SelectedPatient.Id}")">
+                    <strong>Patient Portal</strong>
+                    <span>Validate dashboard and appointment history with the same patient id</span>
+                </a>
+                <a class="module-tile" href="@($"/doctor-discovery?patientId={SelectedPatient.Id}")">
+                    <strong>Doctor Discovery</strong>
+                    <span>Launch recommendation engine for this patient journey</span>
+                </a>
+            </div>
+        </article>
+    </section>
 }
 
 <section class="portal-grid">
     <article class="panel">
         <div class="panel-header">
-            <h2>Register And Search</h2>
+            <div>
+                <p class="panel-subtitle">Step 1</p>
+                <h2>Register And Search</h2>
+            </div>
             <span class="status-pill blue">@SearchResults.Count results</span>
         </div>
+        <div class="dispense-summary">
+            <strong>Registry intake</strong>
+            <span>Search existing patients or onboard a new patient record with complete contact and emergency context.</span>
+            <span>Default password policy is preloaded and hidden for safer operator review.</span>
+        </div>
         <div class="entity-form">
-            <label>Search Registry<InputText @bind-Value="SearchText" /></label>
+            <label>Search Registry<InputText @bind-Value="SearchText" placeholder="Name, email, CNIC, or phone" /></label>
             <label>First Name<InputText @bind-Value="RegisterForm.FirstName" /></label>
             <label>Last Name<InputText @bind-Value="RegisterForm.LastName" /></label>
             <label>Email<InputText @bind-Value="RegisterForm.Email" /></label>
-            <label>Password<InputText @bind-Value="RegisterForm.Password" /></label>
+            <label>Password<InputText @bind-Value="RegisterForm.Password" type="password" /></label>
             <label>CNIC<InputText @bind-Value="RegisterForm.Cnic" /></label>
             <label>Date Of Birth<input type="date" value="@RegisterDateOfBirthText" @onchange="OnRegisterDateOfBirthChanged" /></label>
             <label>
@@ -75,40 +137,50 @@
             <button class="secondary-button" type="button" @onclick="SearchPatientsAsync" disabled="@IsBusy">Search</button>
             <button class="text-button" type="button" @onclick="ResetRegistrationForm">Reset Form</button>
         </div>
-        <div class="table-shell">
-            <div class="table-row table-head">
-                <span>Patient</span>
-                <span>Contact</span>
-                <span>Emergency</span>
-                <span></span>
-            </div>
-            @foreach (var patient in SearchResults)
-            {
-                <div class="table-row">
-                    <span>@patient.FirstName @patient.LastName</span>
-                    <span>@DisplayText(patient.Phone, patient.Email)</span>
-                    <span>@DisplayText(patient.EmergencyContactName, "Not captured")</span>
-                    <button class="secondary-button small-button" type="button" @onclick="() => SelectPatientAsync(patient.Id)">Open</button>
+        @if (SearchResults.Count == 0)
+        {
+            <div class="empty-state">No patients found yet. Search the registry or register a new patient to start the care flow.</div>
+        }
+        else
+        {
+            <div class="table-shell">
+                <div class="table-row table-head">
+                    <span>Patient</span>
+                    <span>Contact</span>
+                    <span>Emergency</span>
+                    <span></span>
                 </div>
-            }
-        </div>
+                @foreach (var patient in SearchResults)
+                {
+                    <div class="table-row">
+                        <span>@patient.FirstName @patient.LastName</span>
+                        <span>@DisplayText(patient.Phone, patient.Email)</span>
+                        <span>@DisplayText(patient.EmergencyContactName, "Not captured")</span>
+                        <button class="secondary-button small-button" type="button" @onclick="() => SelectPatientAsync(patient.Id)">Open</button>
+                    </div>
+                }
+            </div>
+        }
     </article>
 
     <article class="panel">
         <div class="panel-header">
-            <h2>Profile And Coverage</h2>
-            <span class="status-pill green">@SelectedPatient?.Id.ToString()[..8]</span>
+            <div>
+                <p class="panel-subtitle">Step 2</p>
+                <h2>Profile And Coverage</h2>
+            </div>
+            <span class="status-pill green">@SelectedPatientKey</span>
         </div>
         @if (SelectedPatient is null)
         {
-            <p class="tone-muted">Search or register a patient to activate enterprise profile management.</p>
+            <div class="empty-state">Search or register a patient to activate enterprise profile management.</div>
         }
         else
         {
             <div class="dispense-summary">
                 <strong>@SelectedPatient.FirstName @SelectedPatient.LastName</strong>
-                <span>@SelectedPatient.Email / @DisplayText(SelectedPatient.Phone, "No phone")</span>
-                <span>@SelectedPatient.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                <span>@SelectedPatientAge / @DisplayText(SelectedPatient.Phone, "No phone")</span>
+                <span>@DisplayText(SelectedPatient.AddressCity, "No city") / @DisplayText(SelectedPatient.InsuranceProvider, "Self pay")</span>
             </div>
             <div class="entity-form">
                 <label>First Name<InputText @bind-Value="ProfileForm.FirstName" /></label>
@@ -136,15 +208,27 @@
 <section class="portal-grid">
     <article class="panel">
         <div class="panel-header">
-            <h2>Medical History</h2>
+            <div>
+                <p class="panel-subtitle">Step 3</p>
+                <h2>Medical History</h2>
+            </div>
             <span class="status-pill amber">Clinical Context</span>
         </div>
         @if (SelectedPatient is null)
         {
-            <p class="tone-muted">Patient medical history becomes editable after a patient is selected.</p>
+            <div class="empty-state">Patient medical history becomes editable after a patient is selected.</div>
         }
         else
         {
+            @if (SelectedPatientSignals.Count > 0)
+            {
+                <div class="selected-tests">
+                    @foreach (var signal in SelectedPatientSignals)
+                    {
+                        <span>@signal</span>
+                    }
+                </div>
+            }
             <div class="entity-form">
                 <label>Allergies<InputTextArea @bind-Value="MedicalHistoryForm.Allergies" /></label>
                 <label>Chronic Diseases<InputTextArea @bind-Value="MedicalHistoryForm.ChronicDiseases" /></label>
@@ -176,12 +260,15 @@
 
     <article class="panel">
         <div class="panel-header">
-            <h2>Vitals Capture</h2>
+            <div>
+                <p class="panel-subtitle">Step 4</p>
+                <h2>Vitals Capture</h2>
+            </div>
             <span class="status-pill blue">@VitalTrends.Count trends</span>
         </div>
         @if (SelectedPatient is null)
         {
-            <p class="tone-muted">Select a patient to capture vitals and trend changes.</p>
+            <div class="empty-state">Select a patient to capture vitals and trend changes.</div>
         }
         else
         {
@@ -200,7 +287,11 @@
                 <button class="primary-button" type="button" @onclick="RecordVitalsAsync" disabled="@IsBusy">Record Vitals</button>
             </div>
 
-            @if (VitalTrends.Count > 0)
+            @if (VitalTrends.Count == 0)
+            {
+                <div class="empty-state">Record at least two vitals entries to unlock trend intelligence for the selected patient.</div>
+            }
+            else
             {
                 <div class="table-shell">
                     @foreach (var trend in VitalTrends)
@@ -221,26 +312,36 @@
 {
     <section class="panel">
         <div class="panel-header">
-            <h2>Vitals History</h2>
+            <div>
+                <p class="panel-subtitle">Recorded measurements</p>
+                <h2>Vitals History</h2>
+            </div>
             <span class="status-pill blue">@VitalsHistory.Count</span>
         </div>
-        <div class="table-shell">
-            <div class="table-row table-head">
-                <span>Recorded</span>
-                <span>Blood Pressure</span>
-                <span>Pulse / Sugar</span>
-                <span>Weight / Temp</span>
-            </div>
-            @foreach (var vital in VitalsHistory)
-            {
-                <div class="table-row">
-                    <span>@vital.RecordedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
-                    <span>@DisplayText($"{vital.SystolicBloodPressure}/{vital.DiastolicBloodPressure}", "Not captured")</span>
-                    <span>@DisplayText(vital.HeartRate?.ToString(), "-") / @DisplayText(vital.BloodSugarMgDl?.ToString("0.0"), "-")</span>
-                    <span>@DisplayText(vital.WeightKg?.ToString("0.0"), "-") / @DisplayText(vital.TemperatureCelsius?.ToString("0.0"), "-")</span>
+        @if (VitalsHistory.Count == 0)
+        {
+            <div class="empty-state">No vitals have been recorded for this patient yet.</div>
+        }
+        else
+        {
+            <div class="table-shell">
+                <div class="table-row table-head">
+                    <span>Recorded</span>
+                    <span>Blood Pressure</span>
+                    <span>Pulse / Sugar</span>
+                    <span>Weight / Temp</span>
                 </div>
-            }
-        </div>
+                @foreach (var vital in VitalsHistory)
+                {
+                    <div class="table-row">
+                        <span>@vital.RecordedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                        <span>@BloodPressureText(vital)</span>
+                        <span>@DisplayText(vital.HeartRate?.ToString(), "-") / @DisplayText(vital.BloodSugarMgDl?.ToString("0.0"), "-")</span>
+                        <span>@DisplayText(vital.WeightKg?.ToString("0.0"), "-") / @DisplayText(vital.TemperatureCelsius?.ToString("0.0"), "-")</span>
+                    </div>
+                }
+            </div>
+        }
     </section>
 }
 
@@ -250,6 +351,9 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "patientId")]
+    public Guid? PrefillPatientId { get; set; }
+
     private RegisterPatientModel RegisterForm { get; set; } = new();
     private UpdatePatientProfileModel ProfileForm { get; set; } = new();
     private UpdateMedicalHistoryModel MedicalHistoryForm { get; set; } = new();
@@ -259,11 +363,41 @@
     private IReadOnlyList<VitalTrendModel> VitalTrends { get; set; } = [];
     private PatientModel? SelectedPatient { get; set; }
     private string SearchText { get; set; } = string.Empty;
-    private string RegisterDateOfBirthText { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddYears(-25)).ToString("yyyy-MM-dd");
-    private string VitalsRecordedAtText { get; set; } = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm");
+    private string RegisterDateOfBirthText { get; set; } = string.Empty;
+    private string VitalsRecordedAtText { get; set; } = string.Empty;
     private bool IsBusy { get; set; }
     private string? StatusMessage { get; set; }
     private string StatusClass { get; set; } = "tone-muted";
+    private string? AppliedPatientSignature { get; set; }
+    private string SelectedPatientKey => SelectedPatient is null ? "No patient" : SelectedPatient.Id.ToString("N")[..8].ToUpperInvariant();
+    private string SelectedPatientAge => SelectedPatient is null ? "-" : $"{Math.Max(0, (DateOnly.FromDateTime(DateTime.UtcNow.Date).DayNumber - SelectedPatient.DateOfBirth.DayNumber) / 365)} years";
+    private string PatientDemographicSummary => SelectedPatient is null
+        ? "-"
+        : $"{SelectedPatientAge} / {SelectedPatient.Gender} / {DisplayText(SelectedPatient.BloodGroup, "Blood group pending")}";
+    private IReadOnlyList<string> SelectedPatientSignals => BuildPatientSignals();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResetRegistrationForm();
+        ResetVitalsForm();
+        await SearchPatientsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = PrefillPatientId?.ToString() ?? "-";
+        if (signature == AppliedPatientSignature)
+        {
+            return;
+        }
+
+        AppliedPatientSignature = signature;
+
+        if (PrefillPatientId.HasValue)
+        {
+            await SelectPatientAsync(PrefillPatientId.Value);
+        }
+    }
 
     private async Task SearchPatientsAsync()
     {
@@ -274,7 +408,7 @@
         if (result?.Success == true && result.Data is not null)
         {
             SearchResults = result.Data;
-            SetStatus("Patient registry loaded.", "tone-green");
+            SetStatus(SearchResults.Count == 0 ? "Patient registry searched. No matching patients found." : "Patient registry loaded.", SearchResults.Count == 0 ? "tone-blue" : "tone-green");
             return;
         }
 
@@ -386,8 +520,7 @@
 
         if (result?.Success == true)
         {
-            VitalsForm = new RecordVitalsModel();
-            VitalsRecordedAtText = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm");
+            ResetVitalsForm();
             await LoadPatientClinicalDataAsync(SelectedPatient.Id);
             SetStatus("Vitals recorded.", "tone-green");
             return;
@@ -403,11 +536,19 @@
         {
             VitalsHistory = vitalsResult.Data.OrderByDescending(x => x.RecordedAt).ToArray();
         }
+        else
+        {
+            VitalsHistory = [];
+        }
 
         var trendsResult = await ApiClient.GetAsync<IReadOnlyList<VitalTrendModel>>($"api/v1/patients/{patientId}/vitals/trends");
         if (trendsResult?.Success == true && trendsResult.Data is not null)
         {
             VitalTrends = trendsResult.Data;
+        }
+        else
+        {
+            VitalTrends = [];
         }
     }
 
@@ -454,6 +595,16 @@
         RegisterDateOfBirthText = RegisterForm.DateOfBirth.ToString("yyyy-MM-dd");
     }
 
+    private void ResetVitalsForm()
+    {
+        var now = DateTimeOffset.Now;
+        VitalsForm = new RecordVitalsModel
+        {
+            RecordedAt = now
+        };
+        VitalsRecordedAtText = ToLocalDateTimeText(now);
+    }
+
     private void OnRegisterDateOfBirthChanged(ChangeEventArgs args)
     {
         RegisterDateOfBirthText = args.Value?.ToString() ?? string.Empty;
@@ -475,6 +626,42 @@
         StatusClass = statusClass;
     }
 
+    private IReadOnlyList<string> BuildPatientSignals()
+    {
+        if (SelectedPatient is null)
+        {
+            return [];
+        }
+
+        var signals = new List<string>
+        {
+            SelectedPatientAge,
+            DisplayText(SelectedPatient.BloodGroup, "Blood group pending")
+        };
+
+        if (!string.IsNullOrWhiteSpace(SelectedPatient.MedicalHistory?.Allergies))
+        {
+            signals.Add("Allergies captured");
+        }
+
+        if (!string.IsNullOrWhiteSpace(SelectedPatient.MedicalHistory?.ChronicDiseases))
+        {
+            signals.Add("Chronic conditions captured");
+        }
+
+        if (!string.IsNullOrWhiteSpace(SelectedPatient.InsuranceProvider))
+        {
+            signals.Add("Insurance on file");
+        }
+
+        if (VitalsHistory.Count > 0)
+        {
+            signals.Add($"{VitalsHistory.Count} vitals entries");
+        }
+
+        return signals;
+    }
+
     private static string DisplayText(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -483,5 +670,20 @@
     private static string DisplayNumber(decimal? value)
     {
         return value?.ToString("0.##") ?? "-";
+    }
+
+    private static string BloodPressureText(PatientVitalsModel vital)
+    {
+        if (!vital.SystolicBloodPressure.HasValue && !vital.DiastolicBloodPressure.HasValue)
+        {
+            return "Not captured";
+        }
+
+        return $"{DisplayText(vital.SystolicBloodPressure?.ToString(), "-")}/{DisplayText(vital.DiastolicBloodPressure?.ToString(), "-")}";
+    }
+
+    private static string ToLocalDateTimeText(DateTimeOffset value)
+    {
+        return value.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
     }
 }

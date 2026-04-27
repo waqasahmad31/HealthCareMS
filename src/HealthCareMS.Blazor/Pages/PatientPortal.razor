@@ -79,21 +79,28 @@
                 <h2>Upcoming</h2>
                 <span class="status-pill blue">@Dashboard.UpcomingAppointments.Count</span>
             </div>
-            <div class="queue-list">
-                @foreach (var appointment in Dashboard.UpcomingAppointments)
-                {
-                    <div class="queue-row queue-entry-row">
-                        <div>
-                            <strong>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</strong>
-                            <span>@appointment.DoctorName - @appointment.ReasonForVisit</span>
+            @if (Dashboard.UpcomingAppointments.Count == 0)
+            {
+                <div class="empty-state">No upcoming appointments are available for this patient context.</div>
+            }
+            else
+            {
+                <div class="queue-list">
+                    @foreach (var appointment in Dashboard.UpcomingAppointments)
+                    {
+                        <div class="queue-row queue-entry-row">
+                            <div>
+                                <strong>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</strong>
+                                <span>@appointment.DoctorName - @appointment.ReasonForVisit</span>
+                            </div>
+                            <div class="queue-entry-meta">
+                                <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                                <span>@appointment.Type</span>
+                            </div>
                         </div>
-                        <div class="queue-entry-meta">
-                            <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
-                            <span>@appointment.Type</span>
-                        </div>
-                    </div>
-                }
-            </div>
+                    }
+                </div>
+            }
         </article>
 
         <article class="panel">
@@ -101,21 +108,28 @@
                 <h2>Past</h2>
                 <span class="status-pill green">@Dashboard.PastAppointments.Count</span>
             </div>
-            <div class="table-shell">
-                <div class="table-row table-head portal-row">
-                    <span>Schedule</span>
-                    <span>Doctor</span>
-                    <span>Status</span>
-                </div>
-                @foreach (var appointment in Dashboard.PastAppointments)
-                {
-                    <div class="table-row portal-row">
-                        <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
-                        <span>@appointment.DoctorName</span>
-                        <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+            @if (Dashboard.PastAppointments.Count == 0)
+            {
+                <div class="empty-state">No completed or historical appointments are available yet.</div>
+            }
+            else
+            {
+                <div class="table-shell">
+                    <div class="table-row table-head portal-row">
+                        <span>Schedule</span>
+                        <span>Doctor</span>
+                        <span>Status</span>
                     </div>
-                }
-            </div>
+                    @foreach (var appointment in Dashboard.PastAppointments)
+                    {
+                        <div class="table-row portal-row">
+                            <span>@appointment.ScheduledAt.LocalDateTime.ToString("MMM dd HH:mm")</span>
+                            <span>@appointment.DoctorName</span>
+                            <span class="@StatusPill(appointment.Status)">@appointment.Status</span>
+                        </div>
+                    }
+                </div>
+            }
         </article>
     </section>
 
@@ -124,15 +138,22 @@
             <h2>Quick Actions</h2>
             <span class="status-pill amber">@Dashboard.QuickActions.Count</span>
         </div>
-        <div class="module-grid">
-            @foreach (var action in Dashboard.QuickActions)
-            {
-                <div class="module-tile">
-                    <strong>@action</strong>
-                    <span>Ready</span>
-                </div>
-            }
-        </div>
+        @if (Dashboard.QuickActions.Count == 0)
+        {
+            <div class="empty-state">No quick actions are available for this patient at the moment.</div>
+        }
+        else
+        {
+            <div class="module-grid">
+                @foreach (var action in Dashboard.QuickActions)
+                {
+                    <div class="module-tile">
+                        <strong>@action</strong>
+                        <span>Ready</span>
+                    </div>
+                }
+            </div>
+        }
     </section>
 }
 
@@ -193,6 +214,15 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "patientId")]
+    public Guid? PrefillPatientId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "appointmentId")]
+    public Guid? PrefillAppointmentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? PrefillStatus { get; set; }
+
     private PatientPortalDashboardModel? Dashboard { get; set; }
 
     private PortalAppointmentDetailModel? Detail { get; set; }
@@ -210,6 +240,43 @@
     private string? StatusMessage { get; set; }
 
     private string StatusClass { get; set; } = "tone-muted";
+    private string? AppliedPortalSignature { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = $"{PrefillPatientId?.ToString() ?? "-"}|{PrefillAppointmentId?.ToString() ?? "-"}|{PrefillStatus ?? "-"}";
+        if (signature == AppliedPortalSignature)
+        {
+            return;
+        }
+
+        AppliedPortalSignature = signature;
+
+        if (PrefillPatientId.HasValue)
+        {
+            PatientIdText = PrefillPatientId.Value.ToString();
+        }
+
+        if (PrefillAppointmentId.HasValue)
+        {
+            AppointmentIdText = PrefillAppointmentId.Value.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(PrefillStatus))
+        {
+            AppointmentStatusFilter = PrefillStatus;
+        }
+
+        if (PrefillPatientId.HasValue)
+        {
+            await LoadDashboardAsync();
+
+            if (PrefillAppointmentId.HasValue)
+            {
+                await LoadDetailAsync(PrefillAppointmentId.Value);
+            }
+        }
+    }
 
     private async Task LoadDashboardAsync()
     {

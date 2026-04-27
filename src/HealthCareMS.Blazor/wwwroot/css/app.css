@@ -60,11 +60,19 @@ a, .btn-link {
 }
 
 .primary-button,
-.secondary-button {
+.secondary-button,
+.text-button,
+.icon-button {
+    align-items: center;
     border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
     font-weight: 700;
+    justify-content: center;
     min-height: 2.4rem;
     padding: 0 0.95rem;
+    text-decoration: none;
+    transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .primary-button {
@@ -77,6 +85,28 @@ a, .btn-link {
     background: #ffffff;
     border: 1px solid #cbd5e1;
     color: #102336;
+}
+
+.text-button,
+.icon-button {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #102336;
+}
+
+.icon-button {
+    border-radius: 999px;
+    width: 2.4rem;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.text-button:disabled,
+.icon-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.68;
+    transform: none;
+    box-shadow: none;
 }
 
 .stats-grid,
@@ -222,10 +252,20 @@ a, .btn-link {
 .module-tile {
     border: 1px solid #e2e8f0;
     border-radius: 6px;
+    color: inherit;
     display: grid;
     gap: 0.3rem;
     min-height: 5.4rem;
     padding: 0.8rem;
+    text-decoration: none;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+}
+
+.module-tile:hover {
+    background: #f8fbff;
+    border-color: #cbd5e1;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
 }
 
 .permission-grid {
@@ -1100,6 +1140,13 @@ a, .btn-link {
     margin-bottom: 1rem;
 }
 
+.lookup-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 1rem;
+}
+
 .portal-stats .metric-card {
     min-height: 7.2rem;
 }
@@ -1561,6 +1608,7 @@ code {
     .admin-doctor-row,
     .portal-filter,
     .portal-grid,
+    .lookup-grid,
     .queue-filter,
     .system-setting-row,
     .queue-summary,
@@ -2147,4 +2195,75 @@ html, body {
     .permission-chip-grid {
         grid-template-columns: 1fr;
     }
+}
+
+html[dir="rtl"] body,
+html[dir="rtl"] input,
+html[dir="rtl"] select,
+html[dir="rtl"] textarea,
+html[dir="rtl"] button {
+    font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Sans Arabic", sans-serif;
+}
+
+html[dir="rtl"] .page,
+html[dir="rtl"] .content,
+html[dir="rtl"] .dashboard-header,
+html[dir="rtl"] .panel-header,
+html[dir="rtl"] .queue-row,
+html[dir="rtl"] .table-row,
+html[dir="rtl"] .dispense-summary,
+html[dir="rtl"] .empty-state,
+html[dir="rtl"] .nav-section,
+html[dir="rtl"] .nav-item,
+html[dir="rtl"] .metric-card,
+html[dir="rtl"] .module-tile,
+html[dir="rtl"] .permission-row {
+    direction: rtl;
+    text-align: right;
+}
+
+html[dir="rtl"] .top-row,
+html[dir="rtl"] .dashboard-header,
+html[dir="rtl"] .panel-header,
+html[dir="rtl"] .header-actions,
+html[dir="rtl"] .top-actions,
+html[dir="rtl"] .action-cluster,
+html[dir="rtl"] .panel-toolbar,
+html[dir="rtl"] .table-row,
+html[dir="rtl"] .queue-row,
+html[dir="rtl"] .dispense-summary {
+    flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .entity-form,
+html[dir="rtl"] .module-grid,
+html[dir="rtl"] .permission-grid,
+html[dir="rtl"] .stats-grid,
+html[dir="rtl"] .portal-grid,
+html[dir="rtl"] .work-grid {
+    direction: rtl;
+}
+
+html[dir="rtl"] .entity-form label,
+html[dir="rtl"] .module-tile span,
+html[dir="rtl"] .queue-row span,
+html[dir="rtl"] .dispense-summary span,
+html[dir="rtl"] .permission-row span,
+html[dir="rtl"] .metric-label {
+    text-align: right;
+}
+
+html[dir="rtl"] .table-row > span,
+html[dir="rtl"] .table-row > div,
+html[dir="rtl"] .table-row > button,
+html[dir="rtl"] .queue-row > div,
+html[dir="rtl"] .queue-row > span {
+    justify-self: stretch;
+    text-align: right;
+}
+
+html[dir="rtl"] .navigation-studio-toolbar .action-cluster,
+html[dir="rtl"] .panel-toolbar.action-cluster,
+html[dir="rtl"] .header-actions.action-cluster {
+    justify-content: flex-start;
 }

@@ -1,5 +1,6 @@
 using HealthCareMS.Application.Abstractions.Authentication;
 using HealthCareMS.Application.Doctors;
+using HealthCareMS.Domain.Appointments;
 using HealthCareMS.Domain.Doctors;
 using HealthCareMS.Domain.Identity;
 using HealthCareMS.Infrastructure.Caching;
@@ -252,11 +253,26 @@ public sealed partial class DoctorService(
         Guid doctorId,
         DateOnly date,
         string appointmentType,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? utcOffsetMinutes = null)
     {
-        if (date < DateOnly.FromDateTime(DateTime.UtcNow.Date))
+        var offsetValidation = ValidateUtcOffsetMinutes(utcOffsetMinutes);
+        if (offsetValidation.IsFailure)
+        {
+            return Result<IReadOnlyList<AvailableSlotResponse>>.Failure(offsetValidation.Error);
+        }
+
+        var localOffset = TimeSpan.FromMinutes(offsetValidation.Value);
+        var localNow = DateTimeOffset.UtcNow.ToOffset(localOffset);
+        var localToday = DateOnly.FromDateTime(localNow.DateTime);
+        if (date < localToday)
         {
             return Result<IReadOnlyList<AvailableSlotResponse>>.Failure(new Error("DOCTOR_SLOT_DATE_INVALID", "Date cannot be in the past."));
+        }
+
+        if (date > localToday.AddMonths(3))
+        {
+            return Result<IReadOnlyList<AvailableSlotResponse>>.Failure(new Error("DOCTOR_SLOT_DATE_INVALID", "Date cannot be more than 3 months in the future."));
         }
 
         var normalizedType = appointmentType.Trim();
@@ -282,6 +298,15 @@ public sealed partial class DoctorService(
             .OrderBy(x => x.StartTime)
             .ToList();
 
+        var dayStartLocal = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), localOffset);
+        var dayEndLocal = dayStartLocal.AddDays(1);
+        var bookedWindows = await dbContext.Appointments
+            .Where(x => x.DoctorId == doctorId)
+            .Where(x => x.Status != AppointmentStatus.Cancelled && x.Status != AppointmentStatus.NoShow)
+            .Where(x => x.EndAt > dayStartLocal.ToUniversalTime() && x.ScheduledAt < dayEndLocal.ToUniversalTime())
+            .Select(x => new { x.ScheduledAt, x.EndAt })
+            .ToListAsync(cancellationToken);
+
         var slots = new List<AvailableSlotResponse>();
         foreach (var schedule in schedules)
         {
@@ -289,7 +314,20 @@ public sealed partial class DoctorService(
             while (cursor.AddMinutes(schedule.SlotDurationMinutes) <= schedule.EndTime)
             {
                 var end = cursor.AddMinutes(schedule.SlotDurationMinutes);
-                slots.Add(new AvailableSlotResponse(cursor, end, normalizedType));
+                var slotStart = new DateTimeOffset(date.ToDateTime(cursor), localOffset);
+                var slotEnd = new DateTimeOffset(date.ToDateTime(end), localOffset);
+                if (slotStart < localNow.AddMinutes(30))
+                {
+                    cursor = end;
+                    continue;
+                }
+
+                var hasConflict = bookedWindows.Any(x => slotStart < x.EndAt && slotEnd > x.ScheduledAt);
+                if (!hasConflict)
+                {
+                    slots.Add(new AvailableSlotResponse(cursor, end, normalizedType));
+                }
+
                 cursor = end;
             }
         }
@@ -302,6 +340,21 @@ public sealed partial class DoctorService(
         return dbContext.Doctors
             .Include(x => x.User)
             .Include(x => x.Schedules);
+    }
+
+    private static Result<int> ValidateUtcOffsetMinutes(int? utcOffsetMinutes)
+    {
+        if (!utcOffsetMinutes.HasValue)
+        {
+            return Result<int>.Success(0);
+        }
+
+        if (utcOffsetMinutes.Value is < -840 or > 840)
+        {
+            return Result<int>.Failure(new Error("DOCTOR_SLOT_OFFSET_INVALID", "UtcOffsetMinutes must be between -840 and 840."));
+        }
+
+        return Result<int>.Success(utcOffsetMinutes.Value);
     }
 
     private static DoctorResponse Map(Doctor doctor)

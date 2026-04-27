@@ -6,6 +6,8 @@ param(
 
 $checks = @(
     @{ Name = "Client root"; Uri = "$WebBaseUrl/" },
+    @{ Name = "API liveness"; Uri = "$ApiBaseUrl/health/live" },
+    @{ Name = "API readiness"; Uri = "$ApiBaseUrl/health/ready" },
     @{ Name = "API ping"; Uri = "$ApiBaseUrl/api/v1/system/ping" },
     @{ Name = "Payments page"; Uri = "$WebBaseUrl/payments" },
     @{ Name = "Lab workflow page"; Uri = "$WebBaseUrl/lab-workflow" },
@@ -36,4 +38,3 @@ if ($hasFailure) {
 }
 
 Write-Host "Smoke verification completed successfully."
-

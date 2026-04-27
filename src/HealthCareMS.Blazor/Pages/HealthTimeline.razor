@@ -43,18 +43,25 @@
 
     <section class="panel">
         <div class="panel-header"><h2>Timeline</h2><span class="status-pill blue">@Timeline.Entries.Count</span></div>
-        <div class="queue-list">
-            @foreach (var entry in Timeline.Entries)
-            {
-                <div class="queue-row">
-                    <div>
-                        <strong>@entry.Title</strong>
-                        <span>@entry.Description</span>
+        @if (Timeline.Entries.Count == 0)
+        {
+            <div class="empty-state">No timeline entries are available for the selected patient and filter yet.</div>
+        }
+        else
+        {
+            <div class="queue-list">
+                @foreach (var entry in Timeline.Entries)
+                {
+                    <div class="queue-row">
+                        <div>
+                            <strong>@entry.Title</strong>
+                            <span>@entry.Description</span>
+                        </div>
+                        <span class="status-pill @(entry.Severity == "Critical" ? "amber" : "blue")">@entry.OccurredAt.ToString("yyyy-MM-dd HH:mm")</span>
                     </div>
-                    <span class="status-pill @(entry.Severity == "Critical" ? "amber" : "blue")">@entry.OccurredAt.ToString("yyyy-MM-dd HH:mm")</span>
-                </div>
-            }
-        </div>
+                }
+            </div>
+        }
     </section>
 }
 
@@ -64,11 +71,44 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "patientId")]
+    public Guid? PrefillPatientId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "filter")]
+    public string? PrefillFilter { get; set; }
+
     private string PatientIdText { get; set; } = string.Empty;
     private string Filter { get; set; } = string.Empty;
     private PatientHealthTimelineModel? Timeline { get; set; }
     private string? StatusMessage { get; set; }
     private string StatusClass { get; set; } = "tone-muted";
+    private string? AppliedTimelineSignature { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = $"{PrefillPatientId?.ToString() ?? "-"}|{PrefillFilter ?? "-"}";
+        if (signature == AppliedTimelineSignature)
+        {
+            return;
+        }
+
+        AppliedTimelineSignature = signature;
+
+        if (PrefillPatientId.HasValue)
+        {
+            PatientIdText = PrefillPatientId.Value.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(PrefillFilter))
+        {
+            Filter = PrefillFilter;
+        }
+
+        if (PrefillPatientId.HasValue)
+        {
+            await LoadTimelineAsync();
+        }
+    }
 
     private async Task LoadTimelineAsync()
     {

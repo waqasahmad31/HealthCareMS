@@ -38,18 +38,25 @@ public sealed class AppointmentServiceTests
     }
 
     [Fact]
-    public async Task BookAsync_ShouldNormalizeScheduledAtToUtc()
+    public async Task BookAsync_ShouldAcceptLocalOffsetScheduleAndNormalizeToUtc()
     {
         await using var dbContext = CreateDbContext();
         var setup = await SeedAppointmentSetupAsync(dbContext);
         var service = new AppointmentService(dbContext, new FakeCurrentUser(setup.PatientUserId));
-        var nonUtcScheduledAt = setup.ScheduledAt.ToOffset(TimeSpan.FromHours(5));
+        var localOffsetScheduledAt = new DateTimeOffset(
+            setup.ScheduledAt.Year,
+            setup.ScheduledAt.Month,
+            setup.ScheduledAt.Day,
+            9,
+            0,
+            0,
+            TimeSpan.FromHours(5));
 
         var result = await service.BookAsync(
             new BookAppointmentRequest(
                 setup.PatientId,
                 setup.DoctorId,
-                nonUtcScheduledAt,
+                localOffsetScheduledAt,
                 "Online",
                 30,
                 "Patient needs online consultation",
@@ -59,7 +66,85 @@ public sealed class AppointmentServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(TimeSpan.Zero, result.Value.ScheduledAt.Offset);
-        Assert.Equal(setup.ScheduledAt.UtcDateTime, result.Value.ScheduledAt.UtcDateTime);
+        Assert.Equal(localOffsetScheduledAt.UtcDateTime, result.Value.ScheduledAt.UtcDateTime);
+    }
+
+    [Fact]
+    public async Task BookAsync_ShouldAllowSlotReturnedByAvailability_ForLocalOffsetBooking()
+    {
+        await using var dbContext = CreateDbContext();
+        var setup = await SeedAppointmentSetupAsync(dbContext);
+        var appointmentService = new AppointmentService(dbContext, new FakeCurrentUser(setup.PatientUserId));
+        var doctorService = new HealthCareMS.Infrastructure.Doctors.DoctorService(dbContext, new FakePasswordHasher(), new TestDistributedQueryCache());
+        var localDate = DateOnly.FromDateTime(setup.ScheduledAt.UtcDateTime);
+
+        var availableSlots = await doctorService.GetAvailableSlotsAsync(setup.DoctorId, localDate, "OnSite", CancellationToken.None, utcOffsetMinutes: 300);
+
+        Assert.True(availableSlots.IsSuccess);
+        Assert.NotEmpty(availableSlots.Value);
+
+        var firstSlot = availableSlots.Value[0];
+        var localOffsetScheduledAt = new DateTimeOffset(
+            localDate.Year,
+            localDate.Month,
+            localDate.Day,
+            firstSlot.StartTime.Hour,
+            firstSlot.StartTime.Minute,
+            0,
+            TimeSpan.FromHours(5));
+
+        var result = await appointmentService.BookAsync(
+            new BookAppointmentRequest(
+                setup.PatientId,
+                setup.DoctorId,
+                localOffsetScheduledAt,
+                firstSlot.AppointmentType,
+                30,
+                "Patient booked from availability inventory",
+                "Normal",
+                null),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Pending", result.Value.Status);
+        Assert.Equal(localOffsetScheduledAt.UtcDateTime, result.Value.ScheduledAt.UtcDateTime);
+    }
+
+    [Fact]
+    public async Task GetAvailableSlotsAsync_ShouldExcludePreviouslyBookedLocalOffsetSlot()
+    {
+        await using var dbContext = CreateDbContext();
+        var setup = await SeedAppointmentSetupAsync(dbContext);
+        var appointmentService = new AppointmentService(dbContext, new FakeCurrentUser(setup.PatientUserId));
+        var doctorService = new HealthCareMS.Infrastructure.Doctors.DoctorService(dbContext, new FakePasswordHasher(), new TestDistributedQueryCache());
+        var localOffsetScheduledAt = new DateTimeOffset(
+            setup.ScheduledAt.Year,
+            setup.ScheduledAt.Month,
+            setup.ScheduledAt.Day,
+            9,
+            0,
+            0,
+            TimeSpan.FromHours(5));
+        var localDate = new DateOnly(localOffsetScheduledAt.Year, localOffsetScheduledAt.Month, localOffsetScheduledAt.Day);
+
+        var booked = await appointmentService.BookAsync(
+            new BookAppointmentRequest(
+                setup.PatientId,
+                setup.DoctorId,
+                localOffsetScheduledAt,
+                "OnSite",
+                30,
+                "Patient booked from doctor availability workspace",
+                "Normal",
+                null),
+            CancellationToken.None);
+
+        var availableSlots = await doctorService.GetAvailableSlotsAsync(setup.DoctorId, localDate, "OnSite", CancellationToken.None, utcOffsetMinutes: 300);
+
+        Assert.True(booked.IsSuccess);
+        Assert.True(availableSlots.IsSuccess);
+        Assert.DoesNotContain(availableSlots.Value, slot => slot.StartTime == new TimeOnly(9, 0) && slot.EndTime == new TimeOnly(9, 30));
+        Assert.Equal(3, availableSlots.Value.Count);
     }
 
     [Fact]
@@ -290,5 +375,12 @@ public sealed class AppointmentServiceTests
         public bool IsSuperAdmin => false;
 
         public IReadOnlyCollection<string> Permissions { get; } = [PermissionKeys.Appointment.Book];
+    }
+
+    private sealed class FakePasswordHasher : HealthCareMS.Application.Abstractions.Authentication.IPasswordHasher
+    {
+        public string Hash(string password) => password;
+
+        public bool Verify(string password, string passwordHash) => password == passwordHash;
     }
 }
